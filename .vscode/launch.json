@@ -1,0 +1,24 @@
+{
+	// Use IntelliSense to learn about possible attributes.
+	// Hover to view descriptions of existing attributes.
+	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "toss-aws-eip",
+			"type": "python",
+			"request": "launch",
+			"cwd": "${workspaceFolder}/toss-aws-eip",
+			"program": "${workspaceFolder}/toss-aws-eip/toss-aws-eip.py",
+			"args": [
+				// "-r", "ap-southeast-2",
+				"-l", "tosser",
+				"-vvvv", // be very noisy
+				// "-d", // do a dryrun
+				"0.0.0.0/32" // accept no addreess
+			],
+			"console": "integratedTerminal",
+			"justMyCode": false
+		}
+	]
+}
