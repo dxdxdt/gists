@@ -43,12 +43,13 @@ specified and the script will exit if an address from any of the ranges is
 allocated.
 
 ```bash
+# In us-west-1 region, get an EIP with the name  "tosser" from the ranges
 ./toss-aws-eip.py \
-	-r us-west-1 \ # not required if the default region is set in the profile
-	-l "tosser" \ # resource name for identification purposes
-	52.94.249.80/28 \ # range
-	52.95.255.96/28 \ # range
-	52.94.248.128/28 # range
+	-r us-west-1 \
+	-l "tosser" \
+	52.94.249.80/28 \
+	52.95.255.96/28 \
+	52.94.248.128/28
 ```
 
 In the example, the script will allocate and release EIP addresses until one
@@ -61,6 +62,19 @@ a "residue" EIP. If you want multiple EIP's, simply count the number of
 processes that returned 0.
 
 Run with `-h` option for more.
+
+
+To run it concurrently, use [multitoss.sh](multitoss.sh). Check the quota on
+your account to determine the `-p` value. It's usually not that high.
+
+```sh
+multitoss.sh -p3 './toss-aws-eip.py
+	-r us-west-1
+	-l tosser
+	52.94.249.80/28
+	52.95.255.96/28
+	52.94.248.128/28'
+```
 
 ## Why?
 I was having issues with the reputations of IP addresses allocated for EC2. It

@@ -258,7 +258,7 @@ def OptInSignalHandler (sname: str, handler: Callable):
 	'''Install the signal handler if the signal with the name exists on the
 	platform.'''
 	if hasattr(signal, sname):
-		return signal.signal(signal.Signals(sname), handler)
+		return signal.signal(signal.Signals[sname], handler)
 
 def HandleSignal (sn, sf):
 	'''Exit signal handler'''
