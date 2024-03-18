@@ -56,7 +56,7 @@ strings ./assets/flairs/flairdata_ko.pb
 for res in mdpi hdpi xhdpi xxhdpi
 do
 	mkdir "$res"
-	cd "$res"
+	pushd "$res"
 
 	strings ./assets/flairs/flairdata_ko.pb |
 		sed -E -e 's/^\s+//' -e 's/\s+$//' -e 's/ /-/g' |
@@ -66,6 +66,8 @@ do
 		do
 			wget "https://ssl.gstatic.com/tmly/f8944938hffheth4ew890ht4i8/flairs/$res/img_$f.jpg"
 		done
+
+	popd
 done
 ```
 
