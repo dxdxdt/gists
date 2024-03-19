@@ -9,13 +9,13 @@ The JSON data is probably for anyone who is affected by the Amazon's IP address
 changes, namely network admins who have to configure their firewalls for AWS
 traffic. Technically speaking, the data is not meant to be consumed by humans,
 but I personally had to consume it for [my hobby self-hosting
-project](https://gist.github.com/ashegoulding/72a8732d4a1679c343f84fc985ca8de8).
+project](https://gist.github.com/dxdxdt/72a8732d4a1679c343f84fc985ca8de8).
 I was particularly interested in EIP address blocks. I figured they're something
 AWS cannot easily mess with because that involves "evicting" all the EIP holders
 before releasing or repurposing the block.
 
 This tool is hosted on [my github.io
-site](https://ashegoulding.github.io/aws-ipblocks-csv). Bon appetit!
+site](https://dxdxdt.github.io/aws-ipblocks-csv). Bon appetit!
 
 ## Links
 https://docs.aws.amazon.com/vpc/latest/userguide/aws-ip-ranges.html

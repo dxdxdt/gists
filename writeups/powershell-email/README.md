@@ -5,6 +5,8 @@ come.
 
 Should work on all platforms that support Powershell.
 
+[sendmail.ps1](sendmail.ps1)
+
 ## Usage
 Copied from the script.
 ```sh

@@ -8,7 +8,7 @@ https://ip-ranges.amazonaws.com/ip-ranges.json
 I also made the tool for converting the JSON data to CSV so you can use it in
 spreadsheets.
 
-https://ashegoulding.github.io/aws-ipblocks-csv
+https://dxdxdt.github.io/aws-ipblocks-csv
 
 This is the script you're after if you're trying to get an EIP within a specific
 range or block to get away from the lousy neighbours who constantly degrade the
