@@ -1,4 +1,4 @@
-CC := cc
+CC ?= cc
 OBJ = flock_mmap lock
 
 do: build test
