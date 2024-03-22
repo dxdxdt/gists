@@ -67,3 +67,12 @@ VERSIONS
        tect  deadlock.  (Note, however, that on some systems, such as the mod‐
        ern BSDs, flock() and fcntl(2) locks do interact with one another.)
 ```
+
+They're the same picture:
+
+- https://github.com/openbsd/src/blob/eeb276dfee031771095d62f976689174e966054b/sys/kern/kern_descrip.c#L1292
+- https://github.com/apple-oss-distributions/xnu/blob/1031c584a5e37aff177559b9f69dbd3c8c3fd30a/bsd/kern/kern_descrip.c#L5704
+
+This is not:
+
+- https://github.com/torvalds/linux/blob/8e938e39866920ddc266898e6ae1fffc5c8f51aa/fs/locks.c#L2117
