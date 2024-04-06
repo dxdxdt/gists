@@ -43,6 +43,8 @@ I hope you enjoy your stay!
     Console
   - [powershell-email/README.md](writeups/powershell-email/README.md): send
     emails in Powershell
+  - [hackintosh/cloud+libvirt.md](writeups/hackintosh/cloud+libvirt.md):
+    hackintosh on cloud
 
 ## Copyright
 Unless classified otherwise, all the work I do I go by Apache-2.0. Mate, if I
