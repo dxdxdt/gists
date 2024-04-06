@@ -9,10 +9,12 @@ projects that I really wouldn't bother making a git repo for each.
 I hope you enjoy your stay!
 
 ## Index
-- aws-ipblocks-csv: download AWS Public IP address ranges in CSV format. No
-  middle man involved - everything done on your browser
-- toss-aws-eip: get an Elastic IP address until you get one in the range you
-  want
+- [aws-ipblocks-csv](aws-ipblocks-csv/README.md): download AWS Public IP address
+  ranges in CSV format. No middle man involved - everything done on your browser
+- [toss-aws-eip](toss-aws-eip/README.md): get an Elastic IP address until you get one in
+  the range you want
+- [flock_mmap](flock_mmap/README.md): test code demonstrating a bug in Linux's
+  implementation of `flock()`.
 - writeups: all the write ups written up
   - [fedora-korean/chromium-font-fallback.ko.md](writeups/fedora-korean/chromium-font-fallback.ko.md):
     bug report - Chromium has their own font-fallback mechanism which implements
