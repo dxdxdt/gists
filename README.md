@@ -13,6 +13,8 @@ I hope you enjoy your stay!
   ranges in CSV format. No middle man involved - everything done on your browser
 - [toss-aws-eip](toss-aws-eip/README.md): get an Elastic IP address until you get one in
   the range you want
+- [mx-aaaa](mx-aaaa/README.md): query AAAA MX of popular email service providers
+  (part of tracking transition to IPv6 progress)
 - [flock_mmap](flock_mmap/README.md): test code demonstrating a bug in Linux's
   implementation of `flock()`.
 - writeups: all the write ups written up
