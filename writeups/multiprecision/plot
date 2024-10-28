@@ -1,0 +1,2 @@
+plot 'a' with lines, 'c' with lines, 'e' with lines
+pause -1
