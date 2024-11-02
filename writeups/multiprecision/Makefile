@@ -16,7 +16,7 @@ b: fibo.mjs
 	mv b.tmp b
 
 c: fibo.mjs
-	./fibo.mjs 0 | cat -n > c.tmp
+	./fibo.mjs 2 | cat -n > c.tmp
 	mv c.tmp c
 
 d: fibo-crude-mp
@@ -32,11 +32,11 @@ test: a b d
 	diff b d
 
 sxsdiff-a-c: a c
-	! diff --suppress-common-lines -y a c > sxsdiff-a-c.tmp
+	! diff -y a c > sxsdiff-a-c.tmp
 	mv sxsdiff-a-c.tmp sxsdiff-a-c
 
 sxsdiff-c-e: c e
-	! diff --suppress-common-lines -y c e > sxsdiff-c-e.tmp
+	! diff -y c e > sxsdiff-c-e.tmp
 	mv sxsdiff-c-e.tmp sxsdiff-c-e
 
 doplot: a c e
