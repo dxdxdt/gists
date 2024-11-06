@@ -7,7 +7,7 @@ CC_CMD = $(CC) $(CC_OPTS) $(CC_OPTS_BT) $(CC_OPTS_EXTRA)
 all: bitsquat
 
 clean:
-	rm -f bitsquat
+	rm -f bitsquat bitsquat.*.out
 
 bitsquat: bitsquat.c
 	$(CC_CMD) -o bitsquat bitsquat.c

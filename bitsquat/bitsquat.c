@@ -257,7 +257,7 @@ static int do_main (void) {
 				(const uint8_t*)m1,
 				(const uint8_t*)m2,
 				s);
-			ec = 1;
+			ec = 3;
 			goto END;
 		}
 

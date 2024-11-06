@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+. ./MAILTO
+set +e
+
+if [ -z "$MAILTO" ]; then
+	echo "bitsquat-wired: empty MAILTO env var" >&2
+	exit 2
+fi
+
+OUTFILE=bitsquat.$$.out
+
+./bitsquat $@ | tee "$OUTFILE"
+if [ $? -eq 3 ]; then
+	mail -s "bitsquat alert" $MAILTO < "$OUTFILE"
+else
+	rm -f "$OUTFILE"
+fi
