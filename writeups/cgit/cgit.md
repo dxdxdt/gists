@@ -226,6 +226,7 @@ usermod -aG cgit nginx
 chown cgit /var/cache/cgit
 
 systemctl enable --now fcgiwrap@cgit.socket
+systemctl restart nginx.service
 ```
 
 Disable ownership check. Otherwise, you'll get `fatal: detected dubious
@@ -238,6 +239,20 @@ cat << EOF > /srv/git/.gitconfig
 EOF
 chown cgit:cgit /srv/git/.gitconfig
 ```
+
+### Mime types
+Image types in about pages:
+
+<pre>
+mimetype.gif=image/gif
+mimetype.html=text/html
+mimetype.jpg=image/jpeg
+mimetype.jpeg=image/jpeg
+mimetype.pdf=application/pdf
+mimetype.png=image/png
+mimetype.svg=image/svg+xml
+<b>mimetype.webp=image/webp</b>
+</pre>
 
 ### Publish repos
 You've got two options:
