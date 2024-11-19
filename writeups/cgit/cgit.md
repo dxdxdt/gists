@@ -188,7 +188,7 @@ location /cgit {
         gzip                    on;
 
         # not required for subdomain
-        if ( $uri ~* ^/cgit/?(.*)$ ) {
+        if ( $uri ~* ^/cgit(/.*)?$ ) {
                 set $uri_new $1;
         }
 
@@ -202,7 +202,7 @@ location /cgit {
 
         location ~ /cgit/.+/(info/refs|git-upload-pack) {
                 # not required for subdomain
-                if ( $uri ~* ^/cgit/?(.*)$ ) {
+                if ( $uri ~* ^/cgit(/.*)?$ ) {
                         set $uri_new $1;
                 }
                 include             fastcgi_params;
