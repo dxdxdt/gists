@@ -26,7 +26,9 @@
 #include <pthread.h>
 
 #define ARGV0 "eyeball"
-#define DEFAULT_RES_DELAY 0.05
+// RFC 6555: 300 ms preferential delay
+// "Resolution Delay" as per RFC 8305 section 3: 50 ms
+#define DEFAULT_RES_DELAY 0.3 // 300 ms
 
 
 void ts_sub (
@@ -269,7 +271,6 @@ void init_opts (void) {
 	// connection timeout: 10 s
 	opts.op_timeout.tv_sec = 10;
 	opts.op_timeout.tv_nsec = 0;
-	// "Resolution Delay" as per RFC 8305 section 3: 50 ms
 	opts.res_delay = DEFAULT_RES_DELAY;
 }
 
