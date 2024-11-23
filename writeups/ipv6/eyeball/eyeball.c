@@ -161,7 +161,7 @@ void *happy_th_main_inner (
 		struct timespec resolv;
 		struct timespec conn;
 		struct timespec end;
-	} ts;
+	} ts = { 0, };
 
 	clock_gettime(CLOCK_MONOTONIC, &ts.start);
 
@@ -178,6 +178,7 @@ void *happy_th_main_inner (
 			err.error = fr;
 		}
 
+		ts.conn = ts.resolv;
 		goto END;
 	}
 	assert(gai_res != NULL);
@@ -423,9 +424,16 @@ ssize_t poll_result (void) {
 		}
 
 		if (g.th[1].err.ready && g.th[1].err.result == HR_NULL) {
-			// ipv4 connected, but let's wait around for a bit
+			// ipv4 made it first
 			struct timespec bias_deadline;
 
+			if (g.th[0].err.ready) {
+				// and ipv6 failed already. no need to do the waiting
+				return 2;
+			}
+
+			// ipv6 connection attempt still in progress.
+			// let's wait around for a bit to see ipv6 makes it in time
 			fprintf(stderr, ARGV0": ipv4 shot first\n");
 
 			get_leadtimef(&bias_deadline, opts.res_delay);
@@ -435,14 +443,9 @@ ssize_t poll_result (void) {
 				// ipv6 made it!
 				return 1;
 			}
-			else if (g.th[1].err.ready) {
-				// ipv6 didn't make it
-				return 2;
-			}
-			else {
-				// all timed out
-				return -1;
-			}
+
+			// ipv6 didn't make it
+			return 2;
 		}
 
 		if (g.th[0].err.ready && g.th[1].err.ready) {
