@@ -385,6 +385,7 @@ bool spawn_threads (void) {
 		fr = pthread_create(&g.th[i].th, NULL, happy_th_main, &g.th[i].args);
 		g.th[i].started = fr == 0;
 		if (!g.th[i].started) {
+			errno = fr;
 			perror(ARGV0": pthread_create()");
 			return false;
 		}
