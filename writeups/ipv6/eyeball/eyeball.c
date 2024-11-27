@@ -303,6 +303,10 @@ bool parse_args (const int argc, const char **argv) {
 		}
 	}
 
+	if (opts.flags.help) {
+		return true;
+	}
+
 	if (argc < optind + 2) {
 		fprintf(stderr, ARGV0": too few arguments\n");
 		return false;
@@ -450,7 +454,7 @@ ssize_t poll_result (void) {
 
 		if (g.th[0].err.ready && g.th[1].err.ready) {
 			// both failed
-			return -1;
+			break;
 		}
 
 		// both still trying
