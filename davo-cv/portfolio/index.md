@@ -280,18 +280,24 @@ the development of the product. I added SoC codec support and ported all the
 backend daemons and frontend apps.
 
 ## Hobbyist years
-### Failed video game project
-2018
+### Failed video game project (2018)
+<img
+	src="img/chanzio.webp"
+	alt=""
+	width="600">
 
-https://youtu.be/PaBgZEkTaFw?si=rI-nD-GpPrW28bEL
+[https://youtu.be/PaBgZEkTaFw?si=rI-nD-GpPrW28bEL](https://youtu.be/PaBgZEkTaFw?si=rI-nD-GpPrW28bEL)
 
-### "Proone" Research Linux Worm Virus
-2019 - 2022
+### "Proone": Research Linux Worm Virus (2019 - 2022)
+<img
+	src="img/proone.svg"
+	alt=""
+	width="800">
 
-https://github.com/dxdxdt/proone
+[https://github.com/dxdxdt/proone](https://github.com/dxdxdt/proone)
 
-### Book: "Dev Log"
-Deep dive into network engineering(work in progress).
+### Book: "Dev Log" (- present)
+Deep dive into network engineering.
 
 ## Open source project contributions
 | project | what | url |

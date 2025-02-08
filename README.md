@@ -9,6 +9,7 @@ projects that I really wouldn't bother making a git repo for each.
 I hope you enjoy your stay!
 
 ## Index
+ - [davo-cv](https://cdn.snart.me/hireme/): my resume
  - [aws-ipblocks-csv](aws-ipblocks-csv/README.md): download AWS Public IP
    address ranges in CSV format. No middle man involved - everything done on
    your browser
