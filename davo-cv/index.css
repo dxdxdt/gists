@@ -1,0 +1,69 @@
+@media print {
+	html {
+		font-size: 11pt;
+	}
+
+	.no-print {
+		display: none;
+	}
+}
+
+@media screen {
+	.only-print {
+		display: none;
+	}
+}
+
+@page {
+	size: auto;
+	margin: 5mm 5mm 5mm 5mm;
+}
+
+td {
+	padding: 1vw;
+}
+
+div.right-align {
+	text-align: right;
+}
+
+table.main-table {
+	width: 100%;
+}
+
+td.left-cell {
+	width: 15vw;
+}
+
+td.center-cell {
+	text-align: center;
+	vertical-align: middle;
+}
+
+td.upper-cell {
+	vertical-align: top;
+}
+
+td.grey-ish-cell {
+	background-color: lightgray;
+	print-color-adjust: exact;
+}
+
+td.grey-cell {
+	background-color: gray;
+	print-color-adjust: exact;
+}
+
+img.passport-profile {
+	/* standard passport size: 128mm, 88mm */
+	width: 2.56vw;
+	height: 1.76vw;
+}
+
+h3.inline {
+	display: inline;
+}
+
+.qr-url {
+	font-size: smaller;
+}
