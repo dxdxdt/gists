@@ -1,0 +1,156 @@
+#!/bin/python3
+'''
+Stabilize all action cam(Gopro) footage in the current working directory using
+Gyroflow, produce low resolution video(LRV) files using FFmpeg.
+
+NOTE: Gyroflow requires hardware acceleration, which may require a non-free
+version of mesa driver depending on the VGA on your system.
+
+By David Timber 2025
+'''
+
+import datetime
+import glob
+import os
+import shutil
+import stat
+import sys
+
+ARGV0 = 'stab-aftg'
+
+def myprintf (msg: str):
+	sys.stderr.write(ARGV0 + ': ' + msg + os.linesep)
+
+class FootageInfo:
+	def __init__(self, fullpath: str, s_stabilized: str, e_lrv: str, e_stabilized: str):
+		s = os.lstat(fullpath)
+		if stat.S_IFREG & s.st_mode == 0:
+			raise FileNotFoundError(fullpath)
+
+		self.path = fullpath
+
+		seppos = fullpath.rfind(os.path.sep)
+		if seppos < 0:
+			self.dirname = ''
+		else:
+			self.dirname = fullpath[:seppos]
+
+		seppos = fullpath.rfind('.')
+		if seppos > len(self.dirname):
+			self.basename = fullpath[:seppos]
+			self.extension = fullpath[seppos:]
+		else:
+			self.basename = fullpath
+			self.extension = ''
+
+		self.filesize = s.st_size
+
+		self.path_stabilized = self.basename + s_stabilized + e_stabilized
+		self.path_lrv = self.basename + s_stabilized + e_lrv
+
+def exists_and_isfile (path):
+	if os.path.exists(path):
+		if os.path.isfile(path):
+			return True
+		raise IsADirectoryError(path)
+	return False
+
+params = {
+	'dryrun': False
+}
+
+def invoke_cmd (cmd: str):
+	global params
+
+	sys.stderr.write(cmd + os.linesep)
+	if not params.get('dryrun'):
+		waitstat = os.system(cmd)
+		if sys.platform.startswith('win32'):
+			ec = waitstat
+		else:
+			ec = os.waitstatus_to_exitcode(waitstat)
+
+		if ec != 0:
+			raise ChildProcessError(ec)
+
+exec_gyroflow = os.environ.get('EXEC_GYROFLOW') or 'gyroflow'
+exec_ffmpeg = os.environ.get('EXEC_FFMPEG') or 'ffmpeg'
+glob_pat = os.environ.get('GLOB_PAT') or '*.[mM][pP]4'
+# opts_gyroflow = os.environ.get('OPTS_GYROFLOW') or '-f'
+# TODO
+# opts_ffmpeg = os.environ.get('OPTS_FFMPEG') or '-c:v libx264 -vf scale=768:-2 -c:a aac -b:a 128k -f'
+opts_ffmpeg = os.environ.get('OPTS_FFMPEG') or '-vf scale=768:-2 -vcodec libx264 -g 1 -bf 0 -vb 0 -crf 20 -preset medium -acodec aac -ab 128k -f mp4 -y'
+suffix_stabilized = '_stabilized'
+ext_stabilized = '.mp4'
+ext_lrv = '.LRV'
+ext_tmp = '.tmp'
+
+cnt_found = 0
+size_total = 0
+list_footage = list[FootageInfo]()
+for f in glob.glob(glob_pat):
+	cnt_found += 1
+
+	if f.lower().endswith((suffix_stabilized + ext_tmp + ext_stabilized).lower()):
+		continue
+	if f.lower().endswith((suffix_stabilized + ext_stabilized).lower()):
+		continue
+
+	fi = FootageInfo(f, suffix_stabilized, ext_lrv, ext_stabilized)
+	if exists_and_isfile(fi.path_stabilized) and exists_and_isfile(fi.path_lrv):
+		continue
+
+	size_total += fi.filesize
+	list_footage.append(fi)
+
+myprintf('''found %d unprocessed files out of %d files. Total size: %d''' %
+	(len(list_footage), cnt_found, size_total))
+
+batch_start = datetime.datetime.now()
+myprintf('''batch start: ''' + batch_start.isoformat())
+
+size_proc = 0
+i = 0
+for f in list_footage:
+	f_start = datetime.datetime.now()
+
+	# Gyroflow
+	if not exists_and_isfile(f.path_stabilized):
+		invoke_cmd('''%s "%s" -f -t "%s%s"''' %
+			(exec_gyroflow, os.path.realpath(f.path), suffix_stabilized, ext_tmp))
+
+		src = f.basename + suffix_stabilized + ext_tmp + ext_stabilized
+		dst = f.path_stabilized
+		sys.stderr.write('''mv %s %s''' % (src, dst) + os.linesep)
+		if not params.get('dryrun'):
+			shutil.move(src, dst)
+
+	# LRV
+	src = f.basename + suffix_stabilized + ext_tmp + ext_lrv
+	dst = f.path_lrv
+	invoke_cmd('''%s -i %s %s %s''' %
+			(exec_ffmpeg, f.path_stabilized, opts_ffmpeg, src))
+	sys.stderr.write('''mv %s %s''' % (src, dst) + os.linesep)
+	if not params.get('dryrun'):
+		shutil.move(src, dst)
+
+	f_end = datetime.datetime.now()
+	f_elapsed = f_end - f_start
+	i += 1
+
+	# progress and estimation report
+	size_proc += f.filesize
+	total_elapsed = f_end - batch_start
+	bps = size_proc / total_elapsed.total_seconds()
+	etf = size_total / bps
+	myprintf('''%s: processed %d bytes in %.3fs (%d/%d %.1f%%)''' %
+		(f.path, f.filesize, total_elapsed.total_seconds(), i, len(list_footage), size_proc / size_total * 100))
+	# FIXME: Generation of LRV is much faster. This estimation is way off when
+	# Gyroflow process is skipped
+	myprintf('''bytes per second = %.3f, estimated time to finish = %.0fs''' %
+		(bps, etf))
+
+batch_end = datetime.datetime.now()
+batch_elapsed = batch_end - batch_start
+myprintf('''batch end: ''' + batch_end.isoformat())
+myprintf('''processed %d in %.3fs''' % (size_total, batch_elapsed.total_seconds()))
