@@ -188,27 +188,24 @@ location /cgit {
         gzip                    on;
 
         # not required for subdomain
-        if ( $uri ~* ^/cgit(/.*)?$ ) {
-                set $uri_new $1;
-        }
+        rewrite ^/git$ /git/ permanent;
+        rewrite ^/git/(.*)?$ /$1 break;
 
         include             fastcgi_params;
         fastcgi_param       SCRIPT_FILENAME /var/www/cgi-bin/cgit;
-        # change to $uri if subdomain
-        fastcgi_param       PATH_INFO       $uri_new;
+        fastcgi_param       PATH_INFO       $uri;
         fastcgi_param       QUERY_STRING    $args;
         fastcgi_param       HTTP_HOST       $server_name;
         fastcgi_pass        unix:/run/fcgiwrap/fcgiwrap-cgit.sock;
 
         location ~ /cgit/.+/(info/refs|git-upload-pack) {
                 # not required for subdomain
-                if ( $uri ~* ^/cgit(/.*)?$ ) {
-                        set $uri_new $1;
-                }
+                rewrite ^/git$ /git/ permanent;
+                rewrite ^/git/(.*)?$ /$1 break;
+
                 include             fastcgi_params;
                 fastcgi_param       SCRIPT_FILENAME     /usr/libexec/git-core/git-http-backend;
-                # change to $uri if subdomain
-                fastcgi_param       PATH_INFO           $uri_new;
+                fastcgi_param       PATH_INFO           $uri;
                 fastcgi_param       GIT_HTTP_EXPORT_ALL 1;
                 fastcgi_param       GIT_PROJECT_ROOT    /srv/git;
                 fastcgi_param       HOME                /srv/git;
