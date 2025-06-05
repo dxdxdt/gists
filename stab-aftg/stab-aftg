@@ -1,4 +1,4 @@
-#!/bin/python3
+#!/bin/env python3
 '''
 Stabilize all action cam(Gopro) footage in the current working directory using
 Gyroflow, produce low resolution video(LRV) files using FFmpeg.
@@ -126,13 +126,14 @@ for f in list_footage:
 			shutil.move(src, dst)
 
 	# LRV
-	src = f.basename + suffix_stabilized + ext_tmp + ext_lrv
-	dst = f.path_lrv
-	invoke_cmd('''%s -i %s %s %s''' %
-			(exec_ffmpeg, f.path_stabilized, opts_ffmpeg, src))
-	sys.stderr.write('''mv %s %s''' % (src, dst) + os.linesep)
-	if not params.get('dryrun'):
-		shutil.move(src, dst)
+	if False:
+		src = f.basename + suffix_stabilized + ext_tmp + ext_lrv
+		dst = f.path_lrv
+		invoke_cmd('''%s -i %s %s %s''' %
+				(exec_ffmpeg, f.path_stabilized, opts_ffmpeg, src))
+		sys.stderr.write('''mv %s %s''' % (src, dst) + os.linesep)
+		if not params.get('dryrun'):
+			shutil.move(src, dst)
 
 	f_end = datetime.datetime.now()
 	f_elapsed = f_end - f_start
