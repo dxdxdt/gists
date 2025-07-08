@@ -1,0 +1,30 @@
+name: run-posix-tests
+run-name: Run various POSIX programs on different platforms
+on:
+  workflow_dispatch:
+jobs:
+  inet-pnp_mac:
+    name: Run inet-pnp on Mac
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: |
+          cd writeups/inet-pnp
+          make test
+  inet-pnp_win:
+    name: Run inet-pnp on Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - shell: bash
+        run: |
+          cd writeups/inet-pnp
+          CC=x86_64-w64-mingw32-gcc EXEC_SUFFIX=.exe LD_ADD=-lws2_32 make test
+  inet-pnp_linux:
+    name: Run inet-pnp on Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: |
+          cd writeups/inet-pnp
+          make test
