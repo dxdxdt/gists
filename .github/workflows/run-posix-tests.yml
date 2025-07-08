@@ -28,3 +28,29 @@ jobs:
       - run: |
           cd writeups/inet-pnp
           make test
+
+  eyeball_mac:
+    name: Run eyeball on Mac
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: |
+          cd writeups/ipv6/eyeball
+          LD_ADD=-lpthread make test
+  eyeball_win:
+    name: Run eyeball on Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - shell: bash
+        run: |
+          cd writeups/ipv6/eyeball
+          CC=x86_64-w64-mingw32-gcc EXEC_SUFFIX=.exe LD_ADD="-lws2_32 -lpthread" make test
+  eyeball_linux:
+    name: Run eyeball on Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: |
+          cd writeups/ipv6/eyeball
+          make test

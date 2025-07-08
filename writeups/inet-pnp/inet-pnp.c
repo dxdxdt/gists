@@ -79,7 +79,7 @@ END:
 	return ret;
 }
 
-#ifdef WIN32
+#if defined _WIN32 || defined __CYGWIN__
 static void start_wsa (void) {
 	int fr;
 	WSADATA wsaData = {0};
@@ -95,7 +95,7 @@ int main (const int argc, const char **argv) {
 	bool err = false;
 	bool proc = false;
 
-#ifdef WIN32
+#if defined _WIN32 || defined __CYGWIN__
 	start_wsa();
 #endif
 

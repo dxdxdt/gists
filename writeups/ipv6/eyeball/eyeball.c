@@ -17,13 +17,19 @@
 #include <signal.h>
 #include <math.h>
 
-#include <unistd.h>
 #include <getopt.h>
+#include <pthread.h>
+#if defined _WIN32 || defined __CYGWIN__
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#else
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <pthread.h>
+#endif
 
 #define ARGV0 "eyeball"
 // RFC 6555: 300 ms preferential delay
@@ -78,7 +84,7 @@ typedef void*(*happy_connectf_t)(
  */
 void *happy_tcp_connectf (
 		void *ctx,
-		const size_t, // unused
+		const size_t unused1, // unused
 		const struct addrinfo *aiv,
 		struct happy_error *out_err)
 {
@@ -100,7 +106,11 @@ ERR:
 	out_err->result = HR_ERRNO;
 	out_err->error = errno;
 	if (ret >= 0) {
+#if defined _WIN32 || defined __CYGWIN__
+		closesocket(ret);
+#else
 		close(ret);
+#endif
 		ret = -1;
 	}
 
@@ -169,7 +179,14 @@ void *happy_th_main_inner (
 	fr = getaddrinfo(node, service, hints, &gai_res);
 	clock_gettime(CLOCK_MONOTONIC, &ts.resolv);
 	if (fr != 0) {
-		if (fr == EAI_SYSTEM) {
+		if (
+#ifdef EAI_SYSTEM
+				fr == EAI_SYSTEM
+#else
+				false
+#endif
+				)
+		{
 			err.result = HR_ERRNO;
 			err.error = errno;
 		}
@@ -204,7 +221,9 @@ END:
 	ts_sub(&err.delay.conn, &ts.end, &ts.conn);
 	ts_sub(&err.delay.total, &ts.end, &ts.start);
 
-	freeaddrinfo(gai_res);
+	if (gai_res != NULL) {
+		freeaddrinfo(gai_res);
+	}
 	free(aiv);
 
 	err.ready = true;
@@ -497,7 +516,12 @@ ssize_t poll_both (void) {
 
 void print_sockname (
 		const int fd,
-		int(*namef)(int, struct sockaddr*, socklen_t*))
+#if defined _WIN32 || defined __CYGWIN__
+		int(*namef)(SOCKET, struct sockaddr*, socklen_t*)
+#else
+		int(*namef)(int, struct sockaddr*, socklen_t*)
+#endif
+		)
 {
 	union {
 		struct sockaddr_storage ss;
@@ -590,10 +614,25 @@ int do_pick (void) {
 	return 0;
 }
 
+#if defined _WIN32 || defined __CYGWIN__
+static void start_wsa (void) {
+	int fr;
+	WSADATA wsaData = {0};
+
+	fr = WSAStartup(MAKEWORD(2, 2), &wsaData);
+	assert(fr == 0);
+	(void)fr;
+}
+#endif
+
 int main (const int argc, const char **argv) {
 	static int ec = 0;
 
 	init_opts();
+
+#if defined _WIN32 || defined __CYGWIN__
+	start_wsa();
+#endif
 
 	if (!parse_args(argc, argv)) {
 		ec = 2;
