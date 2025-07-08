@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <math.h>
+#include <ctype.h>
 
 #include <getopt.h>
 #include <pthread.h>
@@ -102,7 +103,11 @@ void *happy_tcp_connectf (
 
 ERR:
 	out_err->result = HR_ERRNO;
+#if defined _WIN32 || defined __CYGWIN__
+	out_err->error = WSAGetLastError();
+#else
 	out_err->error = errno;
+#endif
 	if (ret >= 0) {
 #if defined _WIN32 || defined __CYGWIN__
 		closesocket(ret);
@@ -516,6 +521,44 @@ void print_sockname (
 	}
 }
 
+void rm_trailing_ws (char *s) {
+	const size_t l = strlen(s);
+
+	for (size_t i = 0; i < l; i += 1) {
+		if (isspace(s[l - 1])) {
+			s[l - 1] = 0;
+		}
+		else {
+			break;
+		}
+	}
+}
+
+void print_errno (const int en) {
+#if defined _WIN32 || defined __CYGWIN__
+	char *msg = NULL;
+
+	FormatMessageA(
+		FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER,
+		NULL,
+		en,
+		0,
+		(LPSTR)&msg,
+		0,
+		NULL);
+	if (msg != NULL) {
+		rm_trailing_ws(msg);
+		printf("%s", msg);
+		LocalFree(msg);
+	}
+	else {
+		printf("%d", en);
+	}
+#else
+	printf("%s", strerror(en));
+#endif
+}
+
 void do_report (const ssize_t picked) {
 	char star;
 
@@ -543,7 +586,7 @@ void do_report (const ssize_t picked) {
 				printf("%s", gai_strerror(g.th[i].err.error));
 				break;
 			case HR_ERRNO:
-				printf("%s", strerror(g.th[i].err.error));
+				print_errno(g.th[i].err.error);
 				break;
 			default:
 				print_sockname(g.th[i].ret, getsockname);
