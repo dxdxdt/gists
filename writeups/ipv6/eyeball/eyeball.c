@@ -74,7 +74,6 @@ struct happy_error {
 
 typedef void*(*happy_connectf_t)(
 	void *ctx,
-	const size_t aic,
 	const struct addrinfo *aiv,
 	struct happy_error *out_err);
 
@@ -84,19 +83,18 @@ typedef void*(*happy_connectf_t)(
  */
 void *happy_tcp_connectf (
 		void *ctx,
-		const size_t unused1, // unused
-		const struct addrinfo *aiv,
+		const struct addrinfo *ai,
 		struct happy_error *out_err)
 {
 	int ret = -1;
 	int fr;
 
-	ret = socket(aiv->ai_family, aiv->ai_socktype, aiv->ai_protocol);
+	ret = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
 	if (ret < 0) {
 		goto ERR;
 	}
 
-	fr = connect(ret, aiv->ai_addr, aiv->ai_addrlen);
+	fr = connect(ret, ai->ai_addr, ai->ai_addrlen);
 	if (fr != 0) {
 		goto ERR;
 	}
@@ -119,37 +117,6 @@ END:
 	return NULL;
 }
 
-/*
- * Converts the list returned from getaddrinfo() to a flat array
- */
-struct addrinfo *flataddrinfo (const struct addrinfo *list, size_t *cnt) {
-	const struct addrinfo *p;
-	struct addrinfo *ret = NULL;
-	size_t i;
-
-	for (i = 0, p = list; p != NULL; p = p->ai_next, i += 1);
-	if (i == 0) {
-		goto END;
-	}
-
-	ret = malloc(sizeof(struct addrinfo) * i);
-	if (ret == NULL) {
-		goto END;
-	}
-
-	for (i = 0, p = list; p != NULL; p = p->ai_next, i += 1) {
-		ret[i] = *p;
-		ret[i].ai_next = ret + i + 1;
-	}
-	ret[i - 1].ai_next = NULL;
-
-END:
-	if (cnt != NULL) {
-		*cnt = i;
-	}
-	return ret;
-}
-
 void *happy_th_main_inner (
 		const char *node,
 		const char *service,
@@ -163,9 +130,7 @@ void *happy_th_main_inner (
 	int fr;
 	void *ret = NULL;
 	struct happy_error err = { 0, };
-	struct addrinfo *gai_res = NULL;
-	struct addrinfo *aiv = NULL;
-	size_t aic = 0;
+	struct addrinfo *ai = NULL;
 	struct {
 		struct timespec start;
 		struct timespec resolv;
@@ -176,7 +141,7 @@ void *happy_th_main_inner (
 	clock_gettime(CLOCK_MONOTONIC, &ts.start);
 
 	// do resolve
-	fr = getaddrinfo(node, service, hints, &gai_res);
+	fr = getaddrinfo(node, service, hints, &ai);
 	clock_gettime(CLOCK_MONOTONIC, &ts.resolv);
 	if (fr != 0) {
 		if (
@@ -198,21 +163,12 @@ void *happy_th_main_inner (
 		ts.conn = ts.resolv;
 		goto END;
 	}
-	assert(gai_res != NULL);
-
-	// bring the result to our address space by converting the list to array
-	aiv = flataddrinfo(gai_res, &aic);
-	if (aiv == NULL) {
-		goto END;
-	}
-	// free the list
-	freeaddrinfo(gai_res);
-	gai_res = NULL;
+	assert(ai != NULL);
 
 	clock_gettime(CLOCK_MONOTONIC, &ts.conn);
 	if (connf != NULL) {
 		// call the inner function
-		ret = connf(ctx, aic, aiv, &err);
+		ret = connf(ctx, ai, &err);
 	}
 
 END:
@@ -221,10 +177,9 @@ END:
 	ts_sub(&err.delay.conn, &ts.end, &ts.conn);
 	ts_sub(&err.delay.total, &ts.end, &ts.start);
 
-	if (gai_res != NULL) {
-		freeaddrinfo(gai_res);
+	if (ai != NULL) {
+		freeaddrinfo(ai);
 	}
-	free(aiv);
 
 	err.ready = true;
 
@@ -384,24 +339,6 @@ bool init_ctx (void) {
 	return true;
 }
 
-void deinit_ctx (void) {
-	for (size_t i = 0; i < 2; i += 1) {
-		if (!g.th[i].started) {
-			continue;
-		}
-/*
- * ain't pretty, but canceling getaddrinfo() is not possible. Portability comes
- * first in this demo. This is why cross-platform many apps handcraft their own
- * address or use libraries like c-res.
- */
-		pthread_cancel(g.th[i].th);
-		pthread_join(g.th[i].th, NULL);
-	}
-
-	pthread_mutex_destroy(&g.lock);
-	pthread_cond_destroy(&g.cond);
-}
-
 bool spawn_threads (void) {
 	int fr;
 
@@ -416,6 +353,29 @@ bool spawn_threads (void) {
 	}
 
 	return true;
+}
+
+void despawn_threads (void) {
+	for (size_t i = 0; i < 2; i += 1) {
+		if (!g.th[i].started) {
+			continue;
+		}
+/*
+ * ain't pretty, but canceling getaddrinfo() is not possible. Portability comes
+ * first in this demo. This is why cross-platform many apps handcraft their own
+ * address or use libraries like c-res.
+ */
+		pthread_cancel(g.th[i].th);
+		pthread_join(g.th[i].th, NULL);
+
+		g.th[i].started = false;
+	}
+}
+
+void deinit_ctx (void) {
+	despawn_threads();
+	pthread_mutex_destroy(&g.lock);
+	pthread_cond_destroy(&g.cond);
 }
 
 void get_leadtime (struct timespec *ts, const struct timespec *amt) {
