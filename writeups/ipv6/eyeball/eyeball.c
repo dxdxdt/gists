@@ -230,9 +230,29 @@ void *happy_th_main (void *args_in) {
 
 int aihintflags (void) {
 	int ret = 0;
+	/*
+	 * Handle Apple's bullshit
+	 *
+	 * POSIX spec clearly specifies that ai_flags value of zero is reserved and
+	 * mapped v4 addresses should be returned when requested(ie. AI_V4MAPPED is
+	 * set). Apple's implementation overrides ai_flags to (AI_ADDRCONFIG_CFG |
+	 * AI_V4MAPPED). AI_UNUSABLE has no effect. The manual page is wrong.
+	 *
+	 * Other Unices and even Windows honor ai_flags == 0, so we give Apple
+	 * special treatment here.
+	 *
+	 * Fuck you, Apple. Eat shit and die.
+	 */
+#if defined(__APPLE__) && defined(AI_ADDRCONFIG)
+	ret |= AI_ADDRCONFIG;
+#endif
 #ifdef AI_IDN
+	/*
+	 * Accept IDN if available. This is the Linux userland default.
+	 */
 	ret |= AI_IDN;
 #endif
+
 	return ret;
 }
 
