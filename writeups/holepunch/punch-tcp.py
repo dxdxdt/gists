@@ -1,11 +1,14 @@
 #!/bin/env python3
+import base64
 import hashlib
+import io
 import random
 import string
 import sys
 import os
 import getopt
 import socket
+import threading
 
 ARGV0 = 'holepunch-tcp'
 target_addr = ( "", 0 )
@@ -14,6 +17,8 @@ flags = {
 	'4': False,
 	'6': False,
 	'h': False,
+	's': False,
+	'r': False,
 }
 tstun_host = None
 tstun_port = 3477
@@ -68,11 +73,10 @@ def parse_args ():
 	if not (flags['4'] or flags['6']):
 		die(2, '-4 or -6 option required')
 
-	if len(args) < 1:
-		die(2, 'KEY required')
+	if len(args) == 1:
+		key = args[0]
 	elif len(args) > 1:
 		die(2, 'Too many args')
-	key = hashlib.sha256(args[0].encode()).digest()
 
 	if flags['4']: af = socket.AF_INET
 	if flags['6']: af = socket.AF_INET6
@@ -81,12 +85,14 @@ def do_tstun (s: socket.socket) -> tuple[str, int]:
 	global tstun_host, tstun_port, key
 	BUFSIZE = 46 + 1 + 5 # INET6_ADDRSTRLEN(46) + ' '(1) + port(5)
 
+	hashed = hashlib.sha256(key.encode()).digest()
+
 	sa = (tstun_host, tstun_port,)
-	prefixed_err('Doing TSTUN via ' + str(sa) + ' ...')
+	prefixed_err('Waiting for TSTUN on ' + str(sa) + ' ...')
 
 	s.connect(sa)
 
-	s.send(key)
+	s.send(hashed)
 	s.shutdown(socket.SHUT_WR)
 
 	msg = str(s.recv(BUFSIZE), 'ascii')
@@ -101,6 +107,23 @@ def set_common_sockopt (s: socket.socket):
 def scrub_unprint (data: bytes) -> str:
 	allowed = set(bytes(string.printable, 'ascii'))
 	return str(bytes(b for b in data if b in allowed), 'ascii')
+
+def do_relay_inbound (s: socket.socket):
+	while True:
+		buf = s.recv(io.DEFAULT_BUFFER_SIZE)
+		# sys.stderr.write('< ' + str(len(buf)) + os.linesep)
+		if len(buf) == 0:
+			return
+		os.write(sys.stdout.fileno(), buf)
+
+def do_relay_outbound (s: socket.socket):
+	while True:
+		buf = os.read(sys.stdin.fileno(), io.DEFAULT_BUFFER_SIZE)
+		# sys.stderr.write('> ' + str(len(buf)) + os.linesep)
+		if len(buf) == 0:
+			s.shutdown(socket.SHUT_WR)
+			return
+		s.send(buf)
 
 def run_peer_mode ():
 	global target_addr
@@ -122,26 +145,41 @@ def run_peer_mode ():
 		prefixed_err('TSTUN result: ' + str(peer))
 
 		s_main.connect(peer)
-		r = str(random.random())
-		prefixed_err('Connected! rnd: ' + r)
+		prefixed_err('Connected!')
 
-		s_main.send(('Hello, there! ' + r).encode('ascii'))
-		s_main.shutdown(socket.SHUT_WR)
-
-		msg_raw = s_main.recv(255)
-		prefixed_err('The other peer says:')
-		print(scrub_unprint(msg_raw))
+		if flags['s']:
+			s_main.shutdown(socket.SHUT_RD)
+			do_relay_outbound(s_main)
+		elif flags['r']:
+			s_main.shutdown(socket.SHUT_WR)
+			do_relay_inbound(s_main)
+		else:
+			# Using threads for Windows support
+			tlist = [
+				threading.Thread(
+					target = do_relay_inbound,
+					args = (s_main,),
+					daemon = True),
+				threading.Thread(
+					target = do_relay_outbound,
+					args = (s_main,),
+					daemon = True)
+			]
+			for t in tlist: t.start()
+			for t in tlist: t.join()
 
 def print_help (out = sys.stdout):
-	print(
-'''Usage: %s <-46> [-T TSTUN_HOST] [-P TSTUN_PORT] [-H BIND_ADDR] [-h] KEY
-KEY: user-supplied paring key for NAT traversal via "T-STUN" server (basically
-     a password or session key)
+	out.write(
+'''Usage: %s <-46> [-T TSTUN_HOST] [-P TSTUN_PORT] [-H BIND_ADDR] [-h] [KEY]
+KEY:      user-supplied paring key.
+          One will be generated for you if not supplied
 Options:
   -h             print this message and exit normally
   -T TSTUN_HOST  T-STUN server host
   -P TSTUN_PORT  T-STUN server port
   -H BIND_ADDR   bind to local address
+  -s             send only mode (stdin -> remote)
+  -r             receive only mode (remote -> stdout)
 ''' % (ARGV0,))
 
 parse_args()
@@ -152,5 +190,11 @@ if flags['h']:
 
 if tstun_host is None:
 	die(2, 'TSTUN_HOST env not set')
+
+if key is None:
+	key = (str(base64.encodebytes(random.randbytes(16)), 'ascii')
+		.replace('=', '')
+		.strip())
+	sys.stderr.write('Generated KEY: ' + key + os.linesep)
 
 run_peer_mode()
