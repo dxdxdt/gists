@@ -3,11 +3,13 @@ set -e
 
 dig_base64 () {
 	maxdepth="$1"
-	for (( i = 1; i < maxdepth; i += 1 ))
+	for i in $(seq $maxdepth)
 	do
-		local dname=$(printf '%02x' "$i" | xxd -ps -r | base64 -w 0)
-		dname=${dname//\//_}
-		dname=${dname//=/}
+		local dname=$(
+				printf '%02x' "$i" |
+				xxd -ps -r |
+				base64 -w0 |
+				sed -E 's/[=\/]//g')
 
 		mkdir -p "$dname"
 		cd "$dname"
@@ -21,7 +23,7 @@ dig_base64 () {
 
 dig_hex () {
 	maxdepth="$1"
-	for (( i = 1; i < maxdepth; i += 1 ))
+	for i in $(seq $maxdepth)
 	do
 		local dname=$(printf '%x' "$i")
 
@@ -35,12 +37,7 @@ dig_hex () {
 	pwd | wc -c
 }
 
-pushd .
-dig_base64 1000
-popd
-
-pushd .
-dig_hex 1500
-popd
+dig_base64 1000 & wait || exit $?
+dig_hex 1500 & wait || exit $?
 
 du -hs AQ 1
