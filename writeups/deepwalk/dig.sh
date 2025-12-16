@@ -1,6 +1,12 @@
 #!/bin/sh
 set -e
 
+if base64 - < /dev/null > /dev/null 2> /dev/null; then
+	b64exec="base64 -w0"
+else
+	b64exec="openssl base64 -A"
+fi
+
 dig_base64 () {
 	maxdepth="$1"
 	for i in $(seq $maxdepth)
@@ -8,7 +14,7 @@ dig_base64 () {
 		local dname=$(
 				printf '%02x' "$i" |
 				xxd -ps -r |
-				base64 -w0 |
+				$b64exec |
 				sed -E 's/[=\/]//g')
 
 		mkdir -p "$dname"

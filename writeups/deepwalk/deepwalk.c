@@ -161,14 +161,19 @@ static int walkf_nftw_cb (
 		errno = EOVERFLOW;
 		return RET_STOP;
 	}
-	basename = fpath + ftwbuf->base;
-	assert(*basename != 0);
 	(void)sb;
-	if (access(basename, F_OK) < 0) {
-		goto err;
-	}
-	else {
-		printf("%s\n", fpath);
+	basename = fpath + ftwbuf->base;
+	/*
+	 * On BSD, basename ends up an empty string if a directory is given with a
+	 * trailing path separator(/)
+	 */
+	if (*basename != 0) {
+		if (access(basename, F_OK) < 0) {
+			goto err;
+		}
+		else {
+			printf("%s\n", fpath);
+		}
 	}
 
 	return RET_CONT;
