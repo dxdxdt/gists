@@ -43,7 +43,22 @@ dig_hex () {
 	pwd | wc -c
 }
 
-dig_base64 1000 & wait || exit $?
-dig_hex 1500 & wait || exit $?
+dig_0 () {
+	maxdepth="$1"
+	for i in $(seq $maxdepth)
+	do
+		mkdir -p "0"
+		cd "0"
+	done
 
-du -hs AQ 1
+	touch gem
+
+	pwd
+	pwd | wc -c
+}
+
+dig_base64 1000 & wait
+dig_hex 1500 & wait
+dig_0 2000 & wait
+
+du -hs AQ 1 0

@@ -19,12 +19,9 @@ dig_paddedhex () {
         do
                 local dname=$(printf '%0255d' "$i")
 
-                if mkdir -p "$dname" && cd "$dname"; then
-                        :
-                else
-                        echo -n "failed at $i"
-                        return 1
-                fi
+                mkdir -p "$dname"
+                cd "$dname"
+                echo $i
         done
 
         touch gem
@@ -32,9 +29,9 @@ dig_paddedhex () {
         pwd | wc -c
 }
 
-# The limit seems to be 1024 levels(fails w/ E2BIG).
-# Probably from the kernel imposed limit of ARG_MAX, which is a hardcoded value.
-dig_paddedhex 1000 & wait || exit $?
+# The limit seems to be 512 levels(fails w/ E2BIG).
+# Seems to be the kernel-bound limit, rather than userspace API limit.
+dig_paddedhex 1000 & wait
 # pwd: ~ 256000 characters
 
 du -hs 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001
