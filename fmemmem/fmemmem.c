@@ -87,7 +87,8 @@ static size_t memmem_all (
 	return ret;
 }
 
-static bool report_found_ofs (size_t ofs, void *unused) {
+static bool report_found_ofs (size_t ofs, void *unused0) {
+	(void)unused0;
 	printf("%zu\n", ofs);
 	return true;
 }
