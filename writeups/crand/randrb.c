@@ -1,3 +1,4 @@
+#define _DEFAULT_SOURCE
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -19,23 +20,17 @@
 
 
 #define OUR_RAND_MAX (32767)
-#define ARR_SIZE ((size_t)4294967296)
-static_assert(ARR_SIZE > 0, "no 32-bit machine support");
-uint16_t *the_arr;
-
-#define ARR_BYTE_SIZE (ARR_SIZE * sizeof(*the_arr))
-static_assert(
-	ARR_SIZE < ARR_BYTE_SIZE && ARR_BYTE_SIZE < SIZE_MAX,
-	"no 32-bit machine support");
-
 #define DEFAULT_M 214013
 #define DEFAULT_A 2531011
 #define DEFAULT_S 1
+#define DEFAULT_CNT ((uint_fast64_t)UINT32_MAX * 2)
 
 static struct {
 	unsigned int m;
 	unsigned int a;
 	unsigned int s;
+	int ofmt; // -1: little, 0: text, 1: big
+	uint_fast64_t cnt;
 	const char *mode;
 } parm = {
 	// https://gitlab.winehq.org/wine/wine/-/blob/master/dlls/msvcrt/misc.c
@@ -44,6 +39,7 @@ static struct {
 	.a = DEFAULT_A,
 	.s = DEFAULT_S,
 	.mode = "M",
+	.cnt = DEFAULT_CNT,
 };
 
 static int rand_masked (void) {
@@ -63,85 +59,108 @@ static void (*seedf)(unsigned int) = NULL;
  */
 static int (*genrand)(void) = rand_masked;
 
-static int do_dump (void) {
-	ssize_t l;
-	size_t rem = ARR_BYTE_SIZE;
-	const uint8_t *p = (void*)the_arr;
+static bool do_binary_dump (const void *m, size_t len) {
+	const uint8_t *p = m;
 
-	fprintf(stderr, ARGV0": dumping the array to stdout ...\n");
-
-	while (rem > 0) {
+	while (len > 0) {
 #ifdef _WIN32
 		// fuck you Microsoft
-		const unsigned int outl = rem < INT_MAX ? rem : INT_MAX;
-		l = write(STDOUT_FILENO, p, outl);
+		const unsigned int outl = len < INT_MAX ? len : INT_MAX;
+		const ssize_t fr = write(STDOUT_FILENO, p, outl);
 #else
-		l = write(STDOUT_FILENO, p, rem);
+		const ssize_t fr = write(STDOUT_FILENO, p, len);
 #endif
-		assert(l != 0);
-		if (l < 0) {
+		assert(fr != 0);
+		if (fr < 0) {
 			perror(ARGV0": write(STDOUT_FILENO, ...)");
-			return 1;
+			return false;
 		}
-		fprintf(
-			stderr,
-			ARGV0": %zu (%.1f%%) ...\n",
-			rem,
-			(double)rem / (double)ARR_BYTE_SIZE * 100.0);
-
-		p += l;
-		rem -= l;
+		p += (size_t)fr;
+		len -= (size_t)fr;
 	}
 	// fsync(STDOUT_FILENO); // modern programs are not responsible for EIO
 
-	return 0;
+	return true;
 }
 
-static int do_iteration (void) {
-	int r;
+static int do_iteration_bin (const int iosize) {
+	uint8_t buf[iosize];
+	size_t l = 0;
+	uint16_t r;
 
-	if (seedf != NULL) {
-		seedf(parm.s);
-	}
+	assert(parm.ofmt != 0);
+	assert(iosize >= (int)sizeof(uint16_t) && iosize % sizeof(uint16_t) == 0);
 
-	for (size_t i = 0; i < ARR_SIZE; i += 1) {
+	for (uint_fast64_t i = 0; i < parm.cnt; i += 1) {
 		r = (uint16_t)genrand();
-		the_arr[i] = r;
+		if (parm.ofmt < 0) {
+			buf[l + 0] = (uint8_t)((r & 0x00FF));
+			buf[l + 1] = (uint8_t)((r & 0xFF00) >> 8);
+		}
+		else {
+			buf[l + 0] = (uint8_t)((r & 0xFF00) >> 8);
+			buf[l + 1] = (uint8_t)((r & 0x00FF));
+		}
+		l += 2;
+		if (l >= (size_t)iosize) {
+			if (!do_binary_dump(buf, l)) {
+				return 1;
+			}
+			l = 0;
+		}
 	}
 
-	return do_dump();
+	return do_binary_dump(buf, l) ? 0 : 1;
+}
+
+static int do_iteration_txt (void) {
+	uint16_t r;
+	for (uint_fast64_t i = 0; i < parm.cnt; i += 1) {
+		r = (uint16_t)genrand();
+		if (printf("%"PRIu16"\n", r) <= 0) {
+			return 1;
+		}
+	}
+	return 0;
 }
 
 static void print_help (void) {
 	printf(
-		"Usage: "ARGV0" [-h] [-m M] [-a A] [-s SEED] [mode]\n"
+		"Usage: "ARGV0" [-hlb] [-m M] [-a A] [-s SEED] [-n COUNT] [mode]\n"
 		"Options:\n"
 		"  -m: multiplier (default: %u)\n"
 		"  -a: increment (default: %u)\n"
 		"  -s: seed (default: %u)\n"
+		"  -n: number of random numbers to generate (default: %"PRIuFAST64")\n"
+		"  -l: output in little endian binary\n"
+		"  -b: output in big endian binary\n"
 		"mode:\n"
 		"  M: use MSVC's variant of rand() (default)\n"
 		"  W: use the ISO C recommended example of rand()\n"
 		"  N: use rand() from the libc that's been linked against the executable\n",
 		DEFAULT_M,
 		DEFAULT_A,
-		DEFAULT_S
+		DEFAULT_S,
+		DEFAULT_CNT
 	);
 }
 
 static int parse_args (const int argc, const char **argv) {
 	while (true) {
-		const int fr = getopt(argc, (char*const*)argv, "hm:a:s:");
+		const int fr = getopt(argc, (char*const*)argv, "hm:a:s:n:lb");
 
 		if (fr < 0) {
 			break;
 		}
 		switch (fr) {
 		case 'h': return 0;
+		case 'l': parm.ofmt = -1; break;
+		case 'b': parm.ofmt = +1; break;
 		// I'm too lazy to use strtol(). Security is not of concern
 		case 'm': sscanf(optarg, "%u", &parm.m); break;
 		case 'a': sscanf(optarg, "%u", &parm.a); break;
 		case 's': sscanf(optarg, "%u", &parm.s); break;
+		case 'n': sscanf(optarg, "%"PRIuFAST64, &parm.cnt); break;
 		default: return -1;
 		}
 	}
@@ -183,56 +202,29 @@ int main (const int argc, const char **argv) {
 	}
 
 #ifndef _WIN32
-	if (isatty(STDOUT_FILENO)) {
+	if (parm.ofmt != 0 && isatty(STDOUT_FILENO)) {
 		fprintf(stderr, ARGV0": stdout is a terminal\n");
 		return 2;
 	}
 #endif
 
-	fprintf(stderr, ARGV0": using %zu bytes of memory\n", ARR_BYTE_SIZE);
 	fprintf(
 		stderr,
-		 ARGV0": mode = %s, M = %u, A = %u, S = %u\n",
+		 ARGV0": mode = %s, M = %u, A = %u, S = %u, ofmt = %d, cnt = %"PRIuFAST64"\n",
 		parm.mode,
 		parm.m,
 		parm.a,
-		parm.s);
+		parm.s,
+		parm.ofmt,
+		parm.cnt
+	);
 
-	the_arr = calloc(ARR_SIZE, sizeof(*the_arr));
-	if (the_arr == NULL) {
-		perror(ARGV0": calloc()");
-		goto err;
+	if (seedf != NULL) {
+		seedf(parm.s);
 	}
-#ifdef _WIN32
-	// XXX: this is useless without (Get|Set)ProcessWorkingSetSize()
-	// I'm not doing that. Fuck Microsoft
-	if (false && !VirtualLock(the_arr, ARR_BYTE_SIZE)) {
-		fprintf(stderr, ARGV0": VirtualLock(): 0x%lx\n", GetLastError());
-		// fprintf(stderr, ARGV0": this is only to prevent OOM freeze/crash\n");
-		// fprintf(stderr, ARGV0": run the program as admin if you want\n");
-	}
-#else
-	/*
-	 * https://man7.org/linux/man-pages/man2/mlock.2.html
-	 * > Memory locking APIs will trigger the necessary page-faults, to bring in
-	 * > the pages being locked, to physical memory. Consequently first access
-	 * > to a locked-memory (following an mlock*() call) will already have
-	 * > physical memory assigned and will not page fault (in RT-critical path).
-	 * > This removes the need to explicitly pre-fault these memory.
-	 *
-	 * Try faulting all the pages right away to boost things up. Page fault
-	 * handling is so efficient that there won't be any performance gain. Still
-	 * a good protection mechanism against OOM.
-	 */
-	if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
-		perror(ARGV0": mlockall()");
-		// fprintf(stderr, ARGV0": this is only to prevent OOM freeze/crash\n");
-		// fprintf(stderr, ARGV0": run the program as root if you want\n");
-	}
-#endif
 
-	return do_iteration();
-err:
-	free(the_arr);
-	return 1;
+	if (parm.ofmt == 0) {
+		return do_iteration_txt();
+	}
+	return do_iteration_bin(getpagesize() * 10);
 }

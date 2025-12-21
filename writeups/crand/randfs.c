@@ -23,6 +23,14 @@
 
 static atomic_uintmax_t *st;
 
+/*
+ * glibc's stdio functions are thread-safe, but that's not necessarily POSIX. We
+ * need to fflush() anyways, so [f]printf() and fflush() are called from the
+ * critical section. fflush() shouldn't really be necessary but somehow, glibc
+ * seems to be using thread-local variables in stdio functions.
+ *
+ * GNUism at its finest.
+ */
 static mtx_t stdlock;
 
 static inline int32_t genrand (uint32_t *seed) {
@@ -126,6 +134,7 @@ static void report_row (const val_t *arr, const size_t cnt) {
 		fprintf(stderr, "%02"PRIval" ", arr[i]);
 	}
 	fprintf(stderr, "\n");
+	fflush(stderr);
 
 	mtx_unlock(&stdlock);
 }
@@ -209,6 +218,7 @@ static inline void report_seed (const uint32_t s) {
 	(void)fr;
 
 	printf("%"PRIu32"\n", s);
+	fflush(stdout);
 
 	mtx_unlock(&stdlock);
 }
