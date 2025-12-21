@@ -20,11 +20,13 @@
 
 #define OUR_RAND_MAX (32767)
 #define ARR_SIZE ((size_t)4294967296)
-static_assert(ARR_SIZE > 0);
+static_assert(ARR_SIZE > 0, "no 32-bit machine support");
 uint16_t *the_arr;
 
 #define ARR_BYTE_SIZE (ARR_SIZE * sizeof(*the_arr))
-static_assert(ARR_SIZE < ARR_BYTE_SIZE && ARR_BYTE_SIZE < SIZE_MAX);
+static_assert(
+	ARR_SIZE < ARR_BYTE_SIZE && ARR_BYTE_SIZE < SIZE_MAX,
+	"no 32-bit machine support");
 
 #define DEFAULT_M 214013
 #define DEFAULT_A 2531011
@@ -72,9 +74,9 @@ static int do_dump (void) {
 #ifdef _WIN32
 		// fuck you Microsoft
 		const unsigned int outl = rem < INT_MAX ? rem : INT_MAX;
-		l = write(STDOUT_FILENO, the_arr, outl);
+		l = write(STDOUT_FILENO, p, outl);
 #else
-		l = write(STDOUT_FILENO, the_arr, rem);
+		l = write(STDOUT_FILENO, p, rem);
 #endif
 		assert(l != 0);
 		if (l < 0) {
