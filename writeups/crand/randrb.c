@@ -1,4 +1,3 @@
-#define _DEFAULT_SOURCE
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -12,7 +11,6 @@
 #include <unistd.h>
 #ifdef _WIN32
 #include <windows.h>
-#include <memoryapi.h>
 #else
 #include <sys/mman.h>
 #endif
@@ -83,7 +81,7 @@ static bool do_binary_dump (const void *m, size_t len) {
 	return true;
 }
 
-static int do_iteration_bin (const int iosize) {
+static int do_iteration_bin (const size_t iosize) {
 	uint8_t buf[iosize];
 	size_t l = 0;
 	uint16_t r;
@@ -102,7 +100,7 @@ static int do_iteration_bin (const int iosize) {
 			buf[l + 1] = (uint8_t)((r & 0x00FF));
 		}
 		l += 2;
-		if (l >= (size_t)iosize) {
+		if (l >= iosize) {
 			if (!do_binary_dump(buf, l)) {
 				return 1;
 			}
@@ -178,7 +176,7 @@ static int parse_args (const int argc, const char **argv) {
 		else if (strcmp(parm.mode, "N") == 0) {
 			genrand = rand;
 			seedf = srand;
-			parm.m = parm.a = parm.s = 0;
+			parm.m = parm.a = 0;
 		}
 		else {
 			fprintf(stderr, ARGV0": %s: %s\n", parm.mode, strerror(EINVAL));
@@ -187,6 +185,24 @@ static int parse_args (const int argc, const char **argv) {
 	}
 
 	return 1;
+}
+
+static size_t getpsz (void) {
+#ifdef _WIN32
+	static bool fire_once = true;
+	SYSTEM_INFO si = { 0, };
+	GetSystemInfo(&si);
+	assert(si.dwPageSize > 0);
+	if (fire_once && si.dwPageSize != 4096) {
+		fprintf(stderr, ARGV0": interesting page size: %lu\n", si.dwPageSize);
+		fire_once = false;
+	}
+	return si.dwPageSize;
+#else
+	const long ret = sysconf(_SC_PAGESIZE);
+	assert(ret > 0);
+	return (size_t)ret;
+#endif
 }
 
 int main (const int argc, const char **argv) {
@@ -226,5 +242,5 @@ int main (const int argc, const char **argv) {
 	if (parm.ofmt == 0) {
 		return do_iteration_txt();
 	}
-	return do_iteration_bin(getpagesize() * 10);
+	return do_iteration_bin(getpsz() * 10);
 }
