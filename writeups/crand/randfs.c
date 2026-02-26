@@ -62,8 +62,16 @@ struct {
 };
 
 struct wctx {
-	uint32_t seed_start;
-	uint32_t seed_step;
+	/*
+	 * Align to 512 bytes. Technically, it doesn't really matter w/ -O2+
+	 * optimisation since the compiler should promote these to the stack or
+	 * registers. Leaving it as is because it could become a problem in the
+	 * future as more members get added.
+	 */
+	_Alignas(512) struct {
+		uint32_t seed_start;
+		uint32_t seed_step;
+	};
 };
 
 static inline bool in_set (
