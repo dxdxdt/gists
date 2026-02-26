@@ -42,6 +42,8 @@ int main (void) {
 	// the kernel only extends without truncating the allocated blocks. All big
 	// 3 filesystems(ext4, xfs, btrfs) behave the same way by failing this test.
 
+	// This is not a bug. See https://lore.kernel.org/lkml/20171010184828.110347744@linuxfoundation.org/
+
 	ftruncate(fd, sizeof(DATA) + 1);
 	do_stat(fd);
 	assert(st.st_size == sizeof(DATA) + 1);
