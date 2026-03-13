@@ -1,13 +1,16 @@
-CC11_D = gcc -std=c11 -Wall -Wextra -Wno-unused-parameter -g -O0
-CC11_R = gcc -std=c11 -Wall -Wextra -Wno-unused-parameter -g -O2
+CC11_D = cc -std=c11 -Wall -Wextra -Wno-unused-parameter -g -O0
+CC11_R = cc -std=c11 -Wall -Wextra -Wno-unused-parameter -g -O2
 CC11MINGW_D = i686-w64-mingw32-gcc -std=c11 -Wall -Wextra -Wno-unused-parameter -g -O0
 CC11MINGW_R = i686-w64-mingw32-gcc -std=c11 -Wall -Wextra -Wno-unused-parameter -g -O2
 
 OBJ = 	ntree128-memcmp \
 	ntree128-chaincmp \
-	ntree128-memcmp.exe \
-	ntree128-chaincmp.exe \
 	ntree128h
+OBJ_EXE = ntree128-memcmp.exe ntree128-chaincmp.exe
+
+ifeq ($(OS),Windows_NT)
+OBJ := $(OBJ_EXE)
+endif
 
 .PHONY: ntree128 run clean
 
@@ -25,11 +28,12 @@ ntree128-memcmp: ntree128.c bsd.h
 	$(CC11_R) -DNTREE_MEMCMP ntree128.c -o ntree128-memcmp
 ntree128-chaincmp: ntree128.c bsd.h
 	$(CC11_R) -DNTREE_CHAINCMP ntree128.c -o ntree128-chaincmp
+ntree128h: ntree128h.c bsd.h
+	$(CC11_R) ntree128h.c -o ntree128h
+
 ntree128-memcmp.exe: ntree128.c bsd.h
 	$(CC11MINGW_R) -DNTREE_MEMCMP ntree128.c -o ntree128-memcmp
 ntree128-chaincmp.exe: ntree128.c bsd.h
 	$(CC11MINGW_R) -DNTREE_CHAINCMP ntree128.c -o ntree128-chaincmp
-ntree128h: ntree128h.c bsd.h
-	$(CC11_R) ntree128h.c -o ntree128h
 ntree128h.exe: ntree128h.c bsd.h
 	$(CC11MINGW_R) ntree128h.c -o ntree128h

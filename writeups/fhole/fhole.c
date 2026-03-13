@@ -52,13 +52,13 @@ static off_t __lseek_mingw (int fd, off_t offset, int whence)
 	qr.Length.QuadPart = LLONG_MAX - offset;
 	or.FileOffset.QuadPart = or.Length.QuadPart = -1;
 	DeviceIoControl(h,
-			     FSCTL_QUERY_ALLOCATED_RANGES,
-			     &qr,
-			     sizeof(qr),
-			     &or,
-			     sizeof(or),
-			     &nor,
-			     NULL);
+			FSCTL_QUERY_ALLOCATED_RANGES,
+			&qr,
+			sizeof(qr),
+			&or,
+			sizeof(or),
+			&nor,
+			NULL);
 	/*
 	 * The return value is not used because data is returned even if the
 	 * function returns FALSE in case of ERROR_MORE_DATA. This is not a

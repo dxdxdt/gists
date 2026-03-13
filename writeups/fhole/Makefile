@@ -10,7 +10,7 @@ TESTS = \
 ifeq ($(OS),Windows_NT)
 	OBJ = fhole.exe
 else
-	OBJ = fhole fhole.exe
+	OBJ = fhole
 endif
 
 .PHONY: test_files test clean
@@ -18,14 +18,14 @@ endif
 # The mingw executable outputs CrLf so it can be run on cmd.exe.
 # But grep totally ignores Cr, so it has to be matched for the test to work
 test: $(OBJ) $(TESTS)
-	./fhole empty         | grep -xP 'empty: \r?'
-	./fhole whole         | grep -xP 'whole: \r?'
-	./fhole datahole      | grep -xP 'datahole: 1048576-2097152 \r?'
-	./fhole holedata      | grep -xP 'holedata: 0-1048576 \r?'
-	./fhole hole-sandwich | grep -xP 'hole-sandwich: 1048576-2097152 \r?'
-	./fhole data-sandwich | grep -xP 'data-sandwich: 0-1048576 2097152-3145728 \r?'
-	./fhole data-rainbow  | grep -xP 'data-rainbow: 1048576-2097152 3145728-4194304 \r?'
-	./fhole hole-rainbow  | grep -xP 'hole-rainbow: 0-1048576 2097152-3145728 \r?'
+	./fhole empty         | tr -d '\r' | grep -x 'empty: '
+	./fhole whole         | tr -d '\r' | grep -x 'whole: '
+	./fhole datahole      | tr -d '\r' | grep -x 'datahole: 1048576-2097152 '
+	./fhole holedata      | tr -d '\r' | grep -x 'holedata: 0-1048576 '
+	./fhole hole-sandwich | tr -d '\r' | grep -x 'hole-sandwich: 1048576-2097152 '
+	./fhole data-sandwich | tr -d '\r' | grep -x 'data-sandwich: 0-1048576 2097152-3145728 '
+	./fhole data-rainbow  | tr -d '\r' | grep -x 'data-rainbow: 1048576-2097152 3145728-4194304 '
+	./fhole hole-rainbow  | tr -d '\r' | grep -x 'hole-rainbow: 0-1048576 2097152-3145728 '
 
 test_files: $(TESTS)
 
@@ -43,41 +43,41 @@ empty:
 	mv -f $@.tmp $@
 whole:
 	truncate -s 0 $@.tmp
-	dd status=none conv=nocreat,notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=0
+	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=0
 	mv -f $@.tmp $@
 datahole:
 	truncate -s 0 $@.tmp
-	dd status=none conv=nocreat,notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=0
+	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=0
 	truncate -s 2M $@.tmp
-	fallocate -d $@.tmp
+	fallocate -d $@.tmp || true
 	mv -f $@.tmp $@
 holedata:
 	truncate -s 0 $@.tmp
-	dd status=none conv=nocreat,notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=1
-	fallocate -d $@.tmp
+	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=1
+	fallocate -d $@.tmp || true
 	mv -f $@.tmp $@
 hole-sandwich:
 	truncate -s 0 $@.tmp
-	dd status=none conv=nocreat,notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=0
-	dd status=none conv=nocreat,notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=2
-	fallocate -d $@.tmp
+	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=0
+	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=2
+	fallocate -d $@.tmp || true
 	mv -f $@.tmp $@
 data-sandwich:
 	truncate -s 0 $@.tmp
 	truncate -s 3M $@.tmp
-	dd status=none conv=nocreat,notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=1
-	fallocate -d $@.tmp
+	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=1
+	fallocate -d $@.tmp || true
 	mv -f $@.tmp $@
 data-rainbow:
 	truncate -s 0 $@.tmp
 	truncate -s 4M $@.tmp
-	dd status=none conv=nocreat,notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=0
-	dd status=none conv=nocreat,notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=2
-	fallocate -d $@.tmp
+	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=0
+	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=2
+	fallocate -d $@.tmp || true
 	mv -f $@.tmp $@
 hole-rainbow:
 	truncate -s 0 $@.tmp
-	dd status=none conv=nocreat,notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=1
-	dd status=none conv=nocreat,notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=3
-	fallocate -d $@.tmp
+	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=1
+	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=3
+	fallocate -d $@.tmp || true
 	mv -f $@.tmp $@
