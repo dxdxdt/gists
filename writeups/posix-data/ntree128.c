@@ -175,7 +175,7 @@ static void loadf (FILE *f, const char *path)
 		count.input += 1;
 
 		a = b = 0;
-		if (sscanf(line, "%"PRIu64" %"PRIu64, &a, &b) != 2) {
+		if (sscanf(line, "%"SCNu64" %"SCNu64, &a, &b) != 2) {
 			fprintf(stderr, PROGNAME": %s:%zu %s\n", path, i, strerror(EINVAL));
 			goto err;
 		}
