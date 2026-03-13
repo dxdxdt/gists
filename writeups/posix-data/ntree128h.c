@@ -1,13 +1,9 @@
 #define _DEFAULT_SOURCE
-
-#ifdef NTREE_AVX512VL
-#include <immintrin.h>
-#endif
-
 #include <assert.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
@@ -30,17 +26,9 @@
 #include "bsd.h"
 #endif
 
-#define PROGNAME "ntree128"
-
-/*
- * NTREE_MEMCMP
- * NTREE_CHAINCMP
- * NTREE_AVX512VL
- */
+#define PROGNAME "ntree128h"
 
 struct key {
-	LIST_ENTRY(key) entries;
-
 	union {
 		uint64_t n[2];
 		struct {
@@ -50,49 +38,12 @@ struct key {
 	} data;
 };
 
-LIST_HEAD(listhead, key);
-struct listhead head;
-
-static_assert(sizeof(LIST_FIRST(&head)->data) == 16, "sizeof(struct key) != 16");
+struct key *arr;
 
 static int compf (const void *in_a, const void *in_b)
 {
-	const struct key *a = in_a;
-	const struct key *b = in_b;
-
-#if	defined(NTREE_MEMCMP)
-
-	return memcmp(&a->data, &b->data, sizeof(a->data));
-
-#elif	defined(NTREE_AVX512VL)
-
-	/* Little to no performance impact for such data */
-
-	__m128i n1 = _mm_setr_epi64((__m64)a->data.n[0], (__m64)a->data.n[1]);
-	__m128i n2 = _mm_setr_epi64((__m64)b->data.n[0], (__m64)b->data.n[1]);
-	__mmask8 ml, mg;
-
-	ml = _mm_cmp_epu64_mask(n1, n2, _MM_CMPINT_LT);
-	mg = _mm_cmp_epu64_mask(n1, n2, _MM_CMPINT_GT);
-	if (ml & 1) {
-		return -1;
-	}
-	if (mg & 1) {
-		return 1;
-	}
-	if (ml & 2) {
-		return -1;
-	}
-	if (mg & 2) {
-		return 1;
-	}
-	return 0;
-
-#else
-
-#ifndef NTREE_CHAINCMP
-#warning "Define one of NTREE_CHAINCMP, NTREE_AVX512VL, or NTREE_MEMCMP. NTREE_CHAINCMP assumed"
-#endif
+	const struct key *a = &arr[(size_t)in_a];
+	const struct key *b = &arr[(size_t)in_b];
 
 	for (size_t i = 0; i < sizeof(a->data.n) / sizeof(a->data.n[0]); i += 1) {
 		if	(a->data.n[i] < b->data.n[i]) {
@@ -103,63 +54,63 @@ static int compf (const void *in_a, const void *in_b)
 		}
 	}
 	return 0;
-
-#endif
 }
 
 void *tree;
+
 struct {
-	size_t tree;
 	size_t input;
+	size_t len;
+	size_t size;
 } count;
+#define ALLOC_SIZE (2 * 1024 * 1024)
+static_assert(ALLOC_SIZE % 4096 == 0, "ALLOC_SIZE not aligned to 4k");
+static_assert(ALLOC_SIZE % sizeof(struct key) == 0, "ALLOC_SIZE not aligned to struct key");
 
-long pagesize;
-
-static struct key * new_key (void)
+static ssize_t new_element (void)
 {
-	struct key *ret = calloc(1, sizeof(struct key));
+	if (count.size <= count.len) {
+		const size_t newsize = count.size + ALLOC_SIZE / sizeof(struct key);
+		const size_t newalloc = newsize * sizeof(struct key);
+		void *newm;
 
-	if (ret == NULL) {
-		return NULL;
+		if (newsize > newalloc || newsize > SSIZE_MAX) {
+			errno = ENOMEM;
+			return -1;
+		}
+		newm = realloc(arr, newalloc);
+		if (newm == NULL) {
+			return -1;
+		}
+
+		arr = newm;
+		count.size = newsize;
 	}
 
-	LIST_INSERT_HEAD(&head, ret, entries);
-	count.tree += 1;
-
-	return ret;
+	return count.len++;
 }
 
 static void free_all (void)
 {
-	struct key *next = LIST_FIRST(&head);
-
-	while (next != NULL) {
-		struct key *cur = next;
-		next = LIST_NEXT(next, entries);
-
-		tdelete(cur, &tree, compf);
-		free(cur);
+	for (size_t i = 0; i < count.len; i += 1) {
+		tdelete((const void*)i, &tree, compf);
 	}
 	assert(tree == NULL);
-	LIST_INIT(&head);
-	count.tree = 0;
+	free(arr);
+	arr = NULL;
+	count.size = count.len = 0;
 }
 
 static void takeback (void)
 {
-	struct key *c = LIST_FIRST(&head);
-
-	assert(count.tree > 0 && LIST_FIRST(&head) != NULL);
-
-	LIST_REMOVE(c, entries);
-	free(c);
-	count.tree -= 1;
+	assert(count.len > 0 && arr != NULL);
+	count.len -= 1;
 }
 
 void walkf (const void *nodep, VISIT which, int depth)
 {
 	if (which == postorder || which == leaf) {
-		struct key *k = *(struct key **)nodep;
+		const struct key *k = &arr[(size_t)(*(void **)nodep)];
 		printf("%"PRIu64" %"PRIu64"\n", (uint64_t)k->data.dev, (uint64_t)k->data.ino);
 	}
 }
@@ -169,7 +120,8 @@ static void loadf (FILE *f, const char *path)
 	char line[256];
 	uint64_t a, b;
 	size_t i;
-	struct key *newn, **old;
+	ssize_t newn, *old;
+	struct key *newk;
 
 	for (i = 0; fgets(line, sizeof(line), f) != NULL; i += 1) {
 		count.input += 1;
@@ -180,15 +132,17 @@ static void loadf (FILE *f, const char *path)
 			goto err;
 		}
 
-		newn = new_key();
-		if (newn == NULL) {
+		newn = new_element();
+		if (newn < 0) {
 			perror(PROGNAME);
 			goto err;
 		}
-		newn->data.dev = (dev_t)a;
-		newn->data.ino = (ino_t)b;
 
-		old = tsearch(newn, &tree, compf);
+		newk = &arr[newn];
+		newk->data.dev = (dev_t)a;
+		newk->data.ino = (ino_t)b;
+
+		old = tsearch((const void*)newn, &tree, compf);
 		if (old == NULL) {
 			perror(PROGNAME);
 			goto err;
@@ -221,15 +175,6 @@ static void load_path (const char *path)
 int main (int argc, char *argv[])
 {
 	static struct timespec tp[3];
-	LIST_INIT(&head);
-
-#if defined(sysconf) && defined(_SC_PAGESIZE)
-	pagesize = sysconf(_SC_PAGESIZE);
-#else
-	/* No one uses Windows with hugepages, anyway */
-	pagesize = 4096;
-#endif
-	assert(pagesize > 0);
 
 	clock_gettime(CLOCK_THREAD_CPUTIME_ID, tp + 0);
 	if (argc == 1) {
@@ -249,7 +194,7 @@ int main (int argc, char *argv[])
 
 	timespecsub(tp + 1, tp + 0, tp + 2);
 	fprintf(stderr, PROGNAME": input: %zu, tree: %zu, time: %ld.%09lds\n",
-		count.input, count.tree, (long)tp[2].tv_sec, tp[2].tv_nsec);
+		count.input, count.len, (long)tp[2].tv_sec, tp[2].tv_nsec);
 
 	twalk(tree, walkf);
 
