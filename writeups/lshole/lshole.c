@@ -11,10 +11,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <assert.h>
 #include <unistd.h>
 #include <fcntl.h>
 
-#define PROGNAME "hole"
+#define PROGNAME_LSHOLE "lshole"
+#define PROGNAME_HASHOLE "hashole"
+static const char *progname;
 
 #ifdef _WIN32
 
@@ -143,47 +146,102 @@ static const char *geterrmsg (void) {
 
 static bool print_holes (const char *path, const int fd)
 {
-	size_t i;
-	off_t hole, data = 0, eof, end;
+	off_t a, b = 0, end;
+	bool out = false;
 
-	eof = LSEEK(fd, 0, SEEK_END);
-	if (eof == 0) {
-		printf("%s: \n", path);
-		return true;
-	}
-
-	for (i = 0; data >= 0; i += 1) {
-		hole = LSEEK(fd, data, SEEK_HOLE);
-		if (hole < 0) {
+	do {
+		a = LSEEK(fd, b, SEEK_HOLE);
+		if (a < 0) {
+			if (b == 0 && errno == ENXIO) {
+				break;
+			}
 			return false;
 		}
 
-		data = LSEEK(fd, hole, SEEK_DATA);
-		if (data < 0 && errno != ENXIO) {
+		b = LSEEK(fd, a, SEEK_DATA);
+		if (b < 0 && errno != ENXIO) {
 			return false;
 		}
 
-		end = data < 0 ? eof : data;
+		end = b < 0 ? LSEEK(fd, 0, SEEK_END) : b;
 
-		if (i == 0) {
-			printf("%s: ", path);
+		if (end < 0) {
+			return false;
 		}
-		if (hole != end) {
-			printf("%"PRIuMAX"-%"PRIuMAX" ", (uintmax_t)hole, (uintmax_t)end);
-			fflush(stdout);
-		}
-	}
 
-	if (i > 0) {
-		printf("\n");
+		if (a != end) {
+			out = true;
+			printf("%s: %"PRIuMAX"-%"PRIuMAX"\n",
+				path, (uintmax_t)a, (uintmax_t)end);
+		}
+	} while (b >= 0);
+
+	if (!out) {
+		printf("%s:\n", path);
 	}
 
 	return true;
 }
 
+static int has_holes (const int fd)
+{
+	off_t h, e;
+
+	h = LSEEK(fd, 0, SEEK_HOLE);
+	if (h < 0) {
+		if (errno == ENXIO) {
+			return 0;
+		}
+		return -1;
+	}
+
+	e = LSEEK(fd, 0, SEEK_END);
+	if (e < 0) {
+		return -1;
+	}
+
+	/*
+	 * The "virtual hole" at the EOF or the file is truncated between the
+	 * lseek calls(TOCTOU), but that's okay.
+	 */
+	if (e <= h) {
+		return 0;
+	}
+
+	return 1;
+}
+
+static bool is_hasholemode (const char *s)
+{
+	static const char PATHSEP =
+#if defined(_WIN32)
+		'\\';
+#else
+		'/';
+#endif
+	const char *sep, *dot;
+
+	sep = strrchr(s, PATHSEP);
+	if (sep != NULL) {
+		s = sep + 1;
+	}
+
+	dot = strrchr(s, '.');
+	if (dot != NULL) {
+		return strncmp(s, PROGNAME_HASHOLE, dot - s) == 0;
+	}
+	return strcmp(s, PROGNAME_HASHOLE) == 0;
+}
+
 int main (int argc, char *argv [])
 {
 	static int fails, oks;
+	static bool hasholemode;
+
+	assert(argc > 0 && argv[0] != NULL);
+	hasholemode = is_hasholemode(argv[0]);
+
+	progname = hasholemode ? PROGNAME_HASHOLE : PROGNAME_LSHOLE;
 
 	for (int i = 1; i < argc; i += 1) {
 		const char *path = argv[i];
@@ -194,25 +252,43 @@ int main (int argc, char *argv [])
 		}
 
 		errno = 0;
-		if (print_holes(path, fd)) {
-			oks += 1;
+		if (hasholemode) {
+			const int ret = has_holes(fd);
+
+			if (ret > 0) {
+				return 0;
+			}
+			if (ret < 0) {
+				goto err;
+			}
+			fails += 1;
 			close(fd);
 			continue;
 		}
+		else {
+			if (print_holes(path, fd)) {
+				oks += 1;
+				close(fd);
+				continue;
+			}
+		}
 
 err:
-		fprintf(stderr, PROGNAME": %s: %s\n", path, geterrmsg());
+		fprintf(stderr, "%s: %s: %s\n", progname, path, geterrmsg());
 		if (fd >= 0) {
 			close(fd);
 		}
 		fails += 1;
+		if (hasholemode) {
+			return 3;
+		}
 	}
 
 	if (fails > 0) {
 		return 1;
 	}
 	if (oks == 0) {
-		fprintf(stderr, "Usage: "PROGNAME" FILE...\n");
+		fprintf(stderr, "Usage: %s FILE...\n", progname);
 		return 2;
 	}
 	return 0;

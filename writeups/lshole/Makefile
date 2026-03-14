@@ -7,35 +7,48 @@ TESTS = \
 	data-sandwich \
 	data-rainbow \
 	hole-rainbow
+OBJ = hashole
 ifeq ($(OS),Windows_NT)
-	OBJ = fhole.exe
+	OBJ += lshole.exe
 else
-	OBJ = fhole
+	OBJ += lshole
 endif
 
 .PHONY: test_files test clean
 
 # The mingw executable outputs CrLf so it can be run on cmd.exe.
 # But grep totally ignores Cr, so it has to be matched for the test to work
-test: $(OBJ) $(TESTS)
-	./fhole empty         | tr -d '\r' | grep -x 'empty: '
-	./fhole whole         | tr -d '\r' | grep -x 'whole: '
-	./fhole datahole      | tr -d '\r' | grep -x 'datahole: 1048576-2097152 '
-	./fhole holedata      | tr -d '\r' | grep -x 'holedata: 0-1048576 '
-	./fhole hole-sandwich | tr -d '\r' | grep -x 'hole-sandwich: 1048576-2097152 '
-	./fhole data-sandwich | tr -d '\r' | grep -x 'data-sandwich: 0-1048576 2097152-3145728 '
-	./fhole data-rainbow  | tr -d '\r' | grep -x 'data-rainbow: 1048576-2097152 3145728-4194304 '
-	./fhole hole-rainbow  | tr -d '\r' | grep -x 'hole-rainbow: 0-1048576 2097152-3145728 '
+test: $(OBJ) $(TESTS) hashole
+	  ./lshole empty         | tr -d '\r' | grep -Ex  'empty:'
+	  ./lshole whole         | tr -d '\r' | grep -Ex  'whole:'
+	  ./lshole datahole      | tr -d '\r' | grep -Ex  'datahole: 1048576-2097152'
+	  ./lshole holedata      | tr -d '\r' | grep -Ex  'holedata: 0-1048576'
+	  ./lshole hole-sandwich | tr -d '\r' | grep -Ex  'hole-sandwich: 1048576-2097152'
+	! ./lshole data-sandwich | tr -d '\r' | grep -Exv 'data-sandwich: 0-1048576|data-sandwich: 2097152-3145728'
+	! ./lshole data-rainbow  | tr -d '\r' | grep -Exv 'data-rainbow: 1048576-2097152|data-rainbow: 3145728-4194304'
+	! ./lshole hole-rainbow  | tr -d '\r' | grep -Exv 'hole-rainbow: 0-1048576|hole-rainbow: 2097152-3145728'
+	! ./hashole empty
+	! ./hashole whole
+	! ./hashole empty whole
+	  ./hashole datahole
+	  ./hashole holedata
+	  ./hashole hole-sandwich
+	  ./hashole data-sandwich
+	  ./hashole data-rainbow
+	  ./hashole hole-rainbow
+	  ./hashole datahole holedata hole-sandwich data-sandwich data-rainbow hole-rainbow
 
 test_files: $(TESTS)
 
 clean:
 	rm -f $(OBJ) $(TESTS)
 
-fhole: fhole.c
-	cc -std=c11 -Wall -Wextra -g -O2 -o fhole fhole.c
-fhole.exe: fhole.c
-	i686-w64-mingw32-gcc -std=c11 -Wall -Wextra -g -O2 -o fhole fhole.c
+lshole: lshole.c
+	cc -std=c11 -Wall -Wextra -g -O2 -o lshole lshole.c
+lshole.exe: lshole.c
+	i686-w64-mingw32-gcc -std=c11 -Wall -Wextra -g -O2 -o lshole lshole.c
+hashole:
+	ln -s lshole hashole
 
 # `fallocate -d` is required for Windows
 empty:
