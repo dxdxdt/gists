@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <io.h>
 #include <assert.h>
+#include <sys/stat.h>
 #else
 #define _GNU_SOURCE
 #endif
@@ -21,12 +22,15 @@ static const char *progname;
 
 #ifdef _WIN32
 
+#if !defined(SEEK_DATA) || !defined(SEEK_HOLE)
 #ifndef SEEK_DATA
 #define SEEK_DATA (3)
 #endif
 #ifndef SEEK_HOLE
 #define SEEK_HOLE (4)
 #endif
+
+#warning "Building with the userspace SEEK_HOLE/SEEK_DATA polyfill, which is MT-UNSAFE by its nature!!!"
 
 static inline bool check_offovf (const LONGLONG ofs)
 {
@@ -42,33 +46,66 @@ static inline bool check_offovf (const LONGLONG ofs)
 
 static off_t __lseek_mingw (int fd, off_t offset, int whence)
 {
+	const off_t raised_ofs = offset < 0 ? 0 : offset;
+	BOOL b;
 	DWORD nor = 0;
 	FILE_ALLOCATED_RANGE_BUFFER qr, or;
 	HANDLE h = (HANDLE)_get_osfhandle(fd);
+	struct stat st;
 
 	if (h == INVALID_HANDLE_VALUE) {
 		errno = EBADF;
 		return -1;
 	}
 
-	qr.FileOffset.QuadPart = offset;
-	qr.Length.QuadPart = LLONG_MAX - offset;
-	or.FileOffset.QuadPart = or.Length.QuadPart = -1;
-	DeviceIoControl(h,
-			FSCTL_QUERY_ALLOCATED_RANGES,
-			&qr,
-			sizeof(qr),
-			&or,
-			sizeof(or),
-			&nor,
-			NULL);
 	/*
-	 * The return value is not used because data is returned even if the
-	 * function returns FALSE in case of ERROR_MORE_DATA. This is not a
-	 * documented feature but an observed one.
+	 * This is susceptible to TOCTOU. The function is only a polyfill.
+	 * Obviously, it has to be provided by WinAPI.
+	 *
+	 * https://pubs.opengroup.org/onlinepubs/9799919799/
+	 *
+	 * > lseek() cannot be implemented with recursive calls in user space
+	 * > because this would not conform to the atomicity requirements in
+	 * > 2.9.7 Thread Interactions with File Operations.
+	 */
+	st.st_size = -1;
+	if (fstat(fd, &st) < 0) {
+		return -1;
+	}
+	assert(st.st_size >= 0);
+	if (st.st_size == 0) {
+		errno = ENXIO;
+		return -1;
+	}
+
+	qr.FileOffset.QuadPart = raised_ofs;
+	qr.Length.QuadPart = LLONG_MAX - raised_ofs;
+	or.FileOffset.QuadPart = or.Length.QuadPart = -1;
+	b = DeviceIoControl(h,
+			    FSCTL_QUERY_ALLOCATED_RANGES,
+			    &qr,
+			    sizeof(qr),
+			    &or,
+			    sizeof(or),
+			    &nor,
+			    NULL);
+	/*
+	 * Continue even if the function returns FALSE in case of
+	 * ERROR_MORE_DATA. This is not a documented feature but an observed
+	 * one.
 	 *
 	 * You gotta love MS folks!
 	 */
+	if (!b && GetLastError() != ERROR_MORE_DATA) {
+		/* Pre-WinXP polyfill (yo, Dawg) */
+		if (offset < st.st_size) {
+			return whence == SEEK_HOLE ?
+				lseek(fd, 0, SEEK_END) : lseek(fd, offset, SEEK_SET);
+		}
+		errno = ENXIO;
+		return -1;
+	}
+
 	if (false) {
 		fprintf(stderr,
 			"qr=%lld,%lld nor=%lu ",
@@ -78,6 +115,7 @@ static off_t __lseek_mingw (int fd, off_t offset, int whence)
 		}
 		fprintf(stderr, "\n");
 	}
+
 	nor /= sizeof(or);
 
 	switch (whence) {
@@ -95,7 +133,12 @@ static off_t __lseek_mingw (int fd, off_t offset, int whence)
 		return lseek(fd, (off_t)or.FileOffset.QuadPart, SEEK_SET);
 	case SEEK_HOLE:
 		if (nor == 0) {
-			return lseek(fd, 0, SEEK_END);
+			if (offset < st.st_size) {
+				return lseek(fd, raised_ofs, SEEK_SET);
+			}
+
+			errno = ENXIO;
+			return -1;
 		}
 
 		assert(or.FileOffset.QuadPart >= 0 && or.Length.QuadPart >= 0);
@@ -133,9 +176,13 @@ static const char *geterrmsg (void) {
 
 #define LSEEK lseek_mingw
 
+#else /* !defined(SEEK_DATA) || !defined(SEEK_HOLE) */
+
+#define LSEEK lseek
+
+#endif /* !defined(SEEK_DATA) || !defined(SEEK_HOLE) */
 #else /* _WIN32 */
 
-#define _GNU_SOURCE
 #define LSEEK lseek
 
 static const char *geterrmsg (void) {
@@ -169,12 +216,18 @@ static bool print_holes (const char *path, const int fd)
 			return false;
 		}
 
-		if (a != end) {
+		if (a < end) {
+			/* Don't print if EOF got shorter due to TOCTOU. */
 			out = true;
 			printf("%s: %"PRIuMAX"-%"PRIuMAX"\n",
 				path, (uintmax_t)a, (uintmax_t)end);
 		}
-	} while (b >= 0);
+		else if (a > end) {
+			/* Ignore the case where EOF getting longer due to TOCTOU. Just complain. */
+			fprintf(stderr, "%s: %s: size changed during operation!\n",
+				progname, path);
+		}
+	} while (b >= 0 && a != b);
 
 	if (!out) {
 		printf("%s:\n", path);

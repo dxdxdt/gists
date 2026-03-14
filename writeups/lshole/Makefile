@@ -9,7 +9,7 @@ TESTS = \
 	hole-rainbow
 OBJ = hashole
 ifeq ($(OS),Windows_NT)
-	OBJ += lshole.exe
+	OBJ += lshole.exe hashole.exe
 else
 	OBJ += lshole
 endif
@@ -49,6 +49,8 @@ lshole.exe: lshole.c
 	i686-w64-mingw32-gcc -std=c11 -Wall -Wextra -g -O2 -o lshole lshole.c
 hashole:
 	ln -s lshole hashole
+hashole.exe:
+	ln -s lshole.exe hashole.exe
 
 # `fallocate -d` is required for Windows
 empty:
