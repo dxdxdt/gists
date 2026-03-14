@@ -49,35 +49,35 @@ datahole:
 	truncate -s 0 $@.tmp
 	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=0
 	truncate -s 2M $@.tmp
-	fallocate -d $@.tmp || true
+	fallocate -d $@.tmp 2> /dev/null || true
 	mv -f $@.tmp $@
 holedata:
 	truncate -s 0 $@.tmp
 	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=1
-	fallocate -d $@.tmp || true
+	fallocate -d $@.tmp 2> /dev/null || true
 	mv -f $@.tmp $@
 hole-sandwich:
 	truncate -s 0 $@.tmp
 	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=0
 	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=2
-	fallocate -d $@.tmp || true
+	fallocate -d $@.tmp 2> /dev/null || true
 	mv -f $@.tmp $@
 data-sandwich:
 	truncate -s 0 $@.tmp
 	truncate -s 3M $@.tmp
 	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=1
-	fallocate -d $@.tmp || true
+	fallocate -d $@.tmp 2> /dev/null || true
 	mv -f $@.tmp $@
 data-rainbow:
 	truncate -s 0 $@.tmp
 	truncate -s 4M $@.tmp
 	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=0
 	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=2
-	fallocate -d $@.tmp || true
+	fallocate -d $@.tmp 2> /dev/null || true
 	mv -f $@.tmp $@
 hole-rainbow:
 	truncate -s 0 $@.tmp
 	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=1
 	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=1 seek=3
-	fallocate -d $@.tmp || true
+	fallocate -d $@.tmp 2> /dev/null || true
 	mv -f $@.tmp $@
