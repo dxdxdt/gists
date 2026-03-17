@@ -46,7 +46,6 @@ static inline bool check_offovf (const LONGLONG ofs)
 
 static off_t __lseek_mingw (int fd, off_t offset, int whence)
 {
-	const off_t raised_ofs = offset < 0 ? 0 : offset;
 	BOOL b;
 	DWORD nor = 0;
 	FILE_ALLOCATED_RANGE_BUFFER qr, or;
@@ -73,13 +72,13 @@ static off_t __lseek_mingw (int fd, off_t offset, int whence)
 		return -1;
 	}
 	assert(st.st_size >= 0);
-	if (st.st_size == 0) {
+	if (offset < 0 || offset >= st.st_size) {
 		errno = ENXIO;
 		return -1;
 	}
 
-	qr.FileOffset.QuadPart = raised_ofs;
-	qr.Length.QuadPart = LLONG_MAX - raised_ofs;
+	qr.FileOffset.QuadPart = (LONGLONG)offset;
+	qr.Length.QuadPart = LLONG_MAX - (LONGLONG)offset;
 	or.FileOffset.QuadPart = or.Length.QuadPart = -1;
 	b = DeviceIoControl(h,
 			    FSCTL_QUERY_ALLOCATED_RANGES,
@@ -134,7 +133,7 @@ static off_t __lseek_mingw (int fd, off_t offset, int whence)
 	case SEEK_HOLE:
 		if (nor == 0) {
 			if (offset < st.st_size) {
-				return lseek(fd, raised_ofs, SEEK_SET);
+				return lseek(fd, offset, SEEK_SET);
 			}
 
 			errno = ENXIO;
@@ -146,7 +145,7 @@ static off_t __lseek_mingw (int fd, off_t offset, int whence)
 			return -1;
 		}
 
-		if (or.FileOffset.QuadPart + or.Length.QuadPart <= offset ||
+		if (or.FileOffset.QuadPart + or.Length.QuadPart <= (LONGLONG)offset ||
 			offset < or.FileOffset.QuadPart)
 		{
 			/* offset is in a hole */
