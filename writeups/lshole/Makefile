@@ -16,6 +16,8 @@ else
 
 	ifneq ($(shell truss > /dev/null 2> /dev/null; echo -n $$?),127)
 		CMD_TRACE = truss
+	else ifneq ($(shell dtruss > /dev/null 2> /dev/null; echo -n $$?),127)
+		CMD_TRACE = dtruss
 	else ifneq ($(shell strace > /dev/null 2> /dev/null; echo -n $$?),127)
 		CMD_TRACE = strace
 	endif
