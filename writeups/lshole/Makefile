@@ -67,7 +67,7 @@ clean:
 lshole: lshole.c
 	cc -std=c11 -Wall -Wextra -g -O2 -o lshole lshole.c
 lshole.exe: lshole.c
-	i686-w64-mingw32-gcc -std=c11 -Wall -Wextra -g -O2 -o lshole lshole.c
+	i686-w64-mingw32-gcc -std=c11 -Wall -Wextra -g -O2 -mcrtdll=crtdll -o lshole lshole.c
 hashole:
 	ln -s lshole hashole
 hashole.exe: lshole.exe
