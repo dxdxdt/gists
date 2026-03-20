@@ -227,6 +227,13 @@ static bool print_holes (const char *path, const int fd)
 				progname, path);
 		}
 	} while (b >= 0 && a != b);
+	/*
+	 * (a != b) condition is technically not required according to the POSIX
+	 * spec, but there are some buggy Linux device implementations including
+	 * /dev/null and /dev/zero.
+	 *
+	 * Link: https://github.com/util-linux/util-linux/pull/4132
+	 */
 
 	if (!out) {
 		printf("%s:\n", path);
