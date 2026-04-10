@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <wchar.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -7,6 +8,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <locale.h>
+#include <getopt.h>
 #include <unistd.h>
 
 static const uint8_t default_upcase_table[] = {
@@ -500,6 +502,9 @@ static const uint8_t default_upcase_table[] = {
 };
 
 static long pagesize;
+static struct {
+	bool mode_c;
+} ui;
 
 static void decompress_upcase_table (const uint8_t *in, const size_t len, uint16_t *out)
 {
@@ -524,12 +529,10 @@ static void decompress_upcase_table (const uint8_t *in, const size_t len, uint16
 	}
 }
 
-static bool print_table (const uint16_t *tbl)
+static bool print_table_human (const uint16_t *tbl)
 {
 	ssize_t last_idx_page = -1, pagecnt = 0;
 	bool page_had_contents = false;
-
-	assert(pagesize > 0);
 
 	for (size_t i = 0; i < 0xFFFF; i += 1) {
 		const uint16_t v = tbl[i];
@@ -560,14 +563,60 @@ static bool print_table (const uint16_t *tbl)
 	return true;
 }
 
+static bool print_table_c (const uint16_t *tbl)
+{
+	bool print_nl = true;
+
+	for (size_t i = 0; i < 0xFFFF; i += 1) {
+		print_nl = (i + 1) % 8 == 0;
+
+		printf("0x%04"PRIX16", ", tbl[i]);
+		if (print_nl)
+			putc('\n', stdout);
+	}
+
+	if (!print_nl)
+		putc('\n', stdout);
+
+	return true;
+}
+
+static void parse_opts (int argc, const char **argv) {
+	int ret;
+
+	do {
+		ret = getopt(argc, (char *const*)argv, "c");
+
+		switch (ret) {
+		case 'c':
+			ui.mode_c = true;
+			break;
+		case -1:
+			break;
+		default:
+			exit(2);
+		}
+	} while (ret != -1);
+}
+
 int main (int argc, const char **argv)
 {
 	static uint16_t table[1 << 16];
+	bool ret;
 
 	pagesize = sysconf(_SC_PAGESIZE);
+	assert(pagesize > 0);
+
 	setlocale(LC_ALL, "");
+
+	parse_opts(argc, argv);
 
 	decompress_upcase_table(default_upcase_table, sizeof(default_upcase_table), table);
 
-	return print_table(table) ? 0 : 1;
+	if (ui.mode_c)
+		ret = print_table_c(table);
+	else
+		ret = print_table_human(table);
+
+	return ret ? 0 : 1;
 }
