@@ -540,8 +540,7 @@ static bool print_table_human (const uint16_t *tbl)
 
 		errno = 0;
 		if (v != 0) {
-			const int ret = printf(
-						"%zX(%lc): %"PRIX16"(%lc)\n",
+			const int ret = printf("%04zX(%lc) -> %04"PRIX16"(%lc)\n",
 						i, (wint_t)i, v, (wint_t)v);
 			if (ret <= 0) {
 				perror("print_table()");
@@ -553,7 +552,7 @@ static bool print_table_human (const uint16_t *tbl)
 
 		if (last_idx_page != this_idx_page) {
 			if (page_had_contents)
-				printf("========== page %zd ==========\n", pagecnt);
+				fprintf(stderr, "========== page %zd ==========\n", pagecnt);
 			pagecnt += 1;
 			page_had_contents = false;
 		}
@@ -601,13 +600,16 @@ static void parse_opts (int argc, const char **argv) {
 
 int main (int argc, const char **argv)
 {
+	static char *lc;
 	static uint16_t table[1 << 16];
 	bool ret;
 
 	pagesize = sysconf(_SC_PAGESIZE);
 	assert(pagesize > 0);
 
-	setlocale(LC_ALL, "");
+	lc = setlocale(LC_ALL, "C.UTF-8");
+	assert(lc != NULL);
+	(void)lc;
 
 	parse_opts(argc, argv);
 
