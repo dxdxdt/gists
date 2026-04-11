@@ -580,7 +580,8 @@ static bool print_table_c (const uint16_t *tbl)
 	return true;
 }
 
-static void parse_opts (int argc, const char **argv) {
+static void parse_opts (int argc, const char **argv)
+{
 	int ret;
 
 	do {
