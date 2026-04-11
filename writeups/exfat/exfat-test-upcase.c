@@ -12,6 +12,11 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
+static struct {
+	bool mode_u;
+	bool mode_l;
+} ui;
+
 static void do_test(const size_t i, const wint_t n, const char *a, const char *b)
 {
 	int fd;
@@ -27,7 +32,7 @@ static void do_test(const size_t i, const wint_t n, const char *a, const char *b
 	}
 
 	if (stat(b, &st[1]) == 0 && st[0].st_ino == st[1].st_ino) {
-		printf("%04zX(%s) -> %"PRIX16"(%s)\n", i, a, (uint16_t)n, b);
+		printf("%04zX(%s) -> %04"PRIX16"(%s)\n", i, a, (uint16_t)n, b);
 		fflush(stdout);
 	}
 
@@ -55,16 +60,36 @@ static bool should_skip (const wint_t c)
 	return false;
 }
 
-int main (void)
+static void parse_opts (int argc, const char **argv)
 {
-	/* test output file names in native encoding(probably UTF-8) */
-	static char name_a[256];
-	static char name_b[256];
-	static char *lc;
+	int ret;
 
-	lc = setlocale(LC_ALL, "C.UTF-8");
-	assert(lc != NULL);
-	(void)lc;
+	do {
+		ret = getopt(argc, (char *const*)argv, "ul");
+
+		switch (ret) {
+		case 'u':
+			ui.mode_u = true;
+			break;
+		case 'l':
+			ui.mode_l = true;
+			break;
+		case -1:
+			break;
+		default:
+			exit(2);
+		}
+	} while (ret != -1);
+}
+
+/*
+ * test every character in the entire BMP excluding upper-case chars. By doing
+ * so, the contents of the upcase table in the kernel can be "extracted".
+ */
+static void run_test (void)
+{
+	char name_a[256];
+	char name_b[256];
 
 	for (wint_t a = 1; a <= 0xFFFF; a += 1) {
 		if (should_skip(a) || iswupper(a))
@@ -84,6 +109,50 @@ int main (void)
 			do_test((size_t)a, b, name_a, name_b);
 		}
 	}
+}
+
+/* test isw(FILTER) to tow(CONV) */
+static void run_test_f (int(*filter)(wint_t), wint_t(*conv)(wint_t))
+{
+	char name_a[256];
+	char name_b[256];
+
+	for (wint_t a = 1; a <= 0xFFFF; a += 1) {
+		wint_t b;
+
+		if (should_skip(a) || !filter(a))
+			continue;
+
+		b = conv(a);
+		if (a == b)
+			/* not all chars are necessarily lower and upper pair */
+			continue;
+
+		name_a[0] = name_b[0] = 0;
+		snprintf(name_a, sizeof(name_a), "%lc", a);
+		snprintf(name_b, sizeof(name_b), "%lc", b);
+		assert(name_a[0] != 0 && name_b[0] != 0);
+
+		do_test((size_t)a, b, name_a, name_b);
+	}
+}
+
+int main (int argc, const char **argv)
+{
+	static char *lc;
+
+	lc = setlocale(LC_ALL, "C.UTF-8");
+	assert(lc != NULL);
+	(void)lc;
+
+	parse_opts(argc, argv);
+
+	if (ui.mode_u)
+		run_test_f(iswupper, towlower);
+	else if (ui.mode_l)
+		run_test_f(iswlower, towupper);
+	else
+		run_test();
 
 	return 0;
 }
