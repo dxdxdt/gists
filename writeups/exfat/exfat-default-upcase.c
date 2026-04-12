@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <wchar.h>
+#include <wctype.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -501,10 +502,22 @@ static const uint8_t default_upcase_table[] = {
 	0xFE, 0xFF, 0xFF, 0xFF
 };
 
-static long pagesize;
+enum outtype {
+	OT_NONE,
+	OT_TABLE_ERRORS,
+	OT_PAGED_TABLE,
+
+	NB_OUTTYPE
+};
+#define assert_outtype_in_range(x) assert(OT_NONE <= x && x < NB_OUTTYPE)
+
 static struct {
+	long pagesize;
+	enum outtype ot;
 	bool mode_c;
-} ui;
+} ui = {
+	.pagesize = 512,
+};
 
 static void decompress_upcase_table (const uint8_t *in, const size_t len, uint16_t *out)
 {
@@ -529,44 +542,51 @@ static void decompress_upcase_table (const uint8_t *in, const size_t len, uint16
 	}
 }
 
-static bool print_table_human (const uint16_t *tbl)
+static void print_conv (const wint_t a, const wint_t b, const char *msg)
 {
-	ssize_t last_idx_page = -1, pagecnt = 0;
+	printf("%04X(%lc) -> %04X(%lc)", a, a, b, b);
+	if (msg != NULL)
+		printf(": %s", msg);
+	putc('\n', stdout);
+}
+
+static void print_table_human (const uint16_t *tbl)
+{
+	ssize_t last_idx_page = -1, entcnt = 0, pagecnt = 0, nzpages = 0;
 	bool page_had_contents = false;
 
-	for (size_t i = 0; i < 0xFFFF; i += 1) {
+	for (size_t i = 0; i <= 0xFFFF; i += 1) {
 		const uint16_t v = tbl[i];
-		const ssize_t this_idx_page = (ssize_t)i * sizeof(uint16_t) / pagesize;
+		const ssize_t this_idx_page = (ssize_t)i * sizeof(uint16_t) / ui.pagesize;
 
 		errno = 0;
 		if (v != 0) {
-			const int ret = printf("%04zX(%lc) -> %04"PRIX16"(%lc)\n",
-						i, (wint_t)i, v, (wint_t)v);
-			if (ret <= 0) {
-				perror("print_table()");
-				return false;
-			}
-
+			print_conv((wint_t)i, (wint_t)v, NULL);
 			page_had_contents = true;
+			entcnt += 1;
 		}
 
 		if (last_idx_page != this_idx_page) {
-			if (page_had_contents)
+			if (page_had_contents) {
+				nzpages += 1;
 				fprintf(stderr, "========== page %zd ==========\n", pagecnt);
+			}
 			pagecnt += 1;
 			page_had_contents = false;
 		}
 		last_idx_page = this_idx_page;
 	}
 
-	return true;
+	fprintf(stderr, "entries: %zd (%zu bytes)\n", entcnt, entcnt * sizeof(uint16_t));
+	fprintf(stderr, "non-empty pages: %zd (nb_page * pagesize = %ld * %zd = %zd bytes)\n",
+		nzpages, ui.pagesize, nzpages, ui.pagesize * nzpages);
 }
 
-static bool print_table_c (const uint16_t *tbl)
+static void print_table_c (const uint16_t *tbl)
 {
 	bool print_nl = true;
 
-	for (size_t i = 0; i < 0xFFFF; i += 1) {
+	for (size_t i = 0; i <= 0xFFFF; i += 1) {
 		print_nl = (i + 1) % 8 == 0;
 
 		printf("0x%04"PRIX16", ", tbl[i]);
@@ -576,8 +596,42 @@ static bool print_table_c (const uint16_t *tbl)
 
 	if (!print_nl)
 		putc('\n', stdout);
+}
 
-	return true;
+static inline const char *check_conv_err (const wint_t a, const wint_t b)
+{
+	if (iswlower(a)) {
+		/* should be converted to upper */
+		if (!iswupper(b))
+			return "lower not converted to upper";
+		return NULL;
+	}
+
+	if (iswupper(a)) {
+		/* upper shouldn't be converted */
+		if (a != b)
+			return "upper converted";
+		return NULL;
+	}
+
+	/* caseless shouldn't be converted to anything */
+	if (a != b)
+		return "caseless converted";
+
+	return NULL;
+}
+
+/* find errors in the table */
+static void print_table_errors (const uint16_t *tbl)
+{
+	for (wint_t a = 0; a <= 0xFFFF; a += 1) {
+		const wint_t b = tbl[a];
+		/* skip chars not covered in table */
+		const char *msg = b ? check_conv_err(a, b) : NULL;
+
+		if (msg != NULL)
+			print_conv(a, b, msg);
+	}
 }
 
 static void parse_opts (int argc, const char **argv)
@@ -585,11 +639,22 @@ static void parse_opts (int argc, const char **argv)
 	int ret;
 
 	do {
-		ret = getopt(argc, (char *const*)argv, "c");
+		ret = getopt(argc, (char *const*)argv, "ces:");
 
 		switch (ret) {
 		case 'c':
 			ui.mode_c = true;
+			break;
+		case 'e':
+			ui.ot = OT_TABLE_ERRORS;
+			break;
+		case 's':
+			ui.pagesize = strtol(optarg, NULL, 0);
+			if (ui.pagesize <= 0) {
+				errno = EINVAL;
+				perror(optarg);
+				exit(2);
+			}
 			break;
 		case -1:
 			break;
@@ -597,16 +662,25 @@ static void parse_opts (int argc, const char **argv)
 			exit(2);
 		}
 	} while (ret != -1);
+
+	assert_outtype_in_range(ui.ot);
+
+	switch (ui.ot) {
+	case OT_TABLE_ERRORS:
+		if (ui.mode_c) {
+			fprintf(stderr, "-c mode not supported with -e output type.\n");
+			exit(2);
+		}
+		break;
+	default:
+		break;
+	}
 }
 
 int main (int argc, const char **argv)
 {
 	static char *lc;
 	static uint16_t table[1 << 16];
-	bool ret;
-
-	pagesize = sysconf(_SC_PAGESIZE);
-	assert(pagesize > 0);
 
 	lc = setlocale(LC_ALL, "C.UTF-8");
 	assert(lc != NULL);
@@ -616,10 +690,22 @@ int main (int argc, const char **argv)
 
 	decompress_upcase_table(default_upcase_table, sizeof(default_upcase_table), table);
 
-	if (ui.mode_c)
-		ret = print_table_c(table);
-	else
-		ret = print_table_human(table);
+	switch (ui.ot) {
+	case OT_NONE:
+		if (ui.mode_c)
+			print_table_c(table);
+		else
+			print_table_human(table);
+		break;
+	case OT_TABLE_ERRORS:
+		print_table_errors(table);
+		break;
+	case OT_PAGED_TABLE:
+		// TODO
+		break;
+	default:
+		break; /* unreachable */
+	}
 
-	return ret ? 0 : 1;
+	return 0;
 }
