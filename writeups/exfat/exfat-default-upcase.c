@@ -181,9 +181,9 @@ static inline void do_emit_range_info (uint16_t start, uint16_t end,
 static void emit_range_info (const uint16_t *tbl, emit_range_info_callback_t cb, void *uc)
 {
 	bool first = false, second = false; /* whether following state values are valid */
-	uint16_t start, value, inc;
-	unsigned int last_value;
-	uint16_t end; /* but not this one */
+	uint16_t start = 0, value = 0, inc = 0;
+	unsigned int last_value = 0;
+	uint16_t end = 0; /* but not this one */
 
 	for (unsigned int i = 0; i <= 0xFFFF; i++) {
 		const uint16_t this_value = tbl[i];
