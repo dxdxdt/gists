@@ -8,11 +8,17 @@
 #include <wctype.h>
 #include <assert.h>
 #include <locale.h>
+
+#include <getopt.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/vfs.h>
+
+#include <linux/magic.h>
 
 static struct {
+	const char *path;
 	bool mode_u;
 	bool mode_l;
 } ui;
@@ -60,11 +66,17 @@ static bool should_skip (const wint_t c)
 	return false;
 }
 
+static void usage (const char *argv0)
+{
+	fprintf(stderr, "Usage: %s [-ul] [PATH]\n", argv0);
+	exit(2);
+}
+
 static void parse_opts (int argc, const char **argv)
 {
 	int ret;
 
-	do {
+	for (;;) {
 		ret = getopt(argc, (char *const*)argv, "ul");
 
 		switch (ret) {
@@ -75,11 +87,14 @@ static void parse_opts (int argc, const char **argv)
 			ui.mode_l = true;
 			break;
 		case -1:
-			break;
+			goto out;
 		default:
-			exit(2);
+			usage(argv[0]);
 		}
-	} while (ret != -1);
+	}
+out:
+	if (optind < argc)
+		ui.path = argv[optind];
 }
 
 /*
@@ -140,12 +155,32 @@ static void run_test_f (int(*filter)(wint_t), wint_t(*conv)(wint_t))
 int main (int argc, const char **argv)
 {
 	static char *lc;
+	static struct statfs sf;
+	static char cwd[4096];
 
 	lc = setlocale(LC_ALL, "C.UTF-8");
 	assert(lc != NULL);
 	(void)lc;
 
 	parse_opts(argc, argv);
+
+	if (ui.path != NULL)
+		if (chdir(ui.path) != 0) {
+			perror(ui.path);
+			return EXIT_FAILURE;
+		}
+
+	getcwd(cwd, sizeof(cwd));
+
+	if (statfs(".", &sf) != 0) {
+		perror(cwd);
+		return EXIT_FAILURE;
+	}
+	if (sf.f_type != EXFAT_SUPER_MAGIC) {
+		fprintf(stderr, "%s: fstype not exFAT (actual f_type: %lX)\n",
+			cwd, sf.f_type);
+		return EXIT_FAILURE;
+	}
 
 	if (ui.mode_u)
 		run_test_f(iswupper, towlower);
