@@ -13,11 +13,6 @@
 #include <unistd.h>
 
 #include "default-upcase-table.h"
-
-/* polyfill kernel facilities */
-#define kvcalloc	calloc
-#define kvfree		free
-#define ARRAY_SIZE(arr)	(sizeof(arr) / sizeof((arr)[0]))
 #include "upcase.h"
 
 enum outtype {
@@ -95,7 +90,7 @@ static void print_table_human (const uint16_t *tbl)
 	}
 
 	fprintf(stderr, "entries: %zd (%zu bytes)\n", entcnt, entcnt * sizeof(uint16_t));
-	fprintf(stderr, "non-empty pages: %zd (nb_page * pagesize * %zu = %ld * %zd = %zd bytes)\n",
+	fprintf(stderr, "non-empty pages: %zd (nb_page * pagesize * %zu = %ld * %zd * 2 = %zd bytes)\n",
 		nzpages,
 		sizeof(uint16_t),
 		ui.pagesize,
@@ -159,6 +154,24 @@ typedef void (*emit_range_info_callback_t) (const uint16_t start, const uint16_t
 					    const uint16_t value, const uint16_t inc,
 					    void *uc);
 
+static inline void do_emit_range_info (uint16_t start, uint16_t end,
+				       uint16_t value, uint16_t inc,
+				       emit_range_info_callback_t cb, void *uc)
+{
+	uint16_t len;
+
+	assert(start <= end);
+	end += 1;
+	len = end - start;
+
+	if (inc == 0)
+		inc = 1;
+	if (len < inc)
+		inc = len;
+
+	cb(start, end, value, inc, uc);
+}
+
 /*
  * Group contiguous runs of upcase mapping in the default upcase table.
  * The "compressed" format of exFAT upcase table is not so space-efficient.
@@ -171,10 +184,6 @@ static void emit_range_info (const uint16_t *tbl, emit_range_info_callback_t cb,
 	uint16_t start, value, inc;
 	unsigned int last_value;
 	uint16_t end; /* but not this one */
-	#define EMIT() { \
-		assert(start <= end);\
-		cb(start, end + 1, value, inc == 0 ? 1 : inc, uc);\
-	}
 
 	for (unsigned int i = 0; i <= 0xFFFF; i++) {
 		const uint16_t this_value = tbl[i];
@@ -213,7 +222,7 @@ static void emit_range_info (const uint16_t *tbl, emit_range_info_callback_t cb,
 		end = i;
 		continue;
 emit:
-		EMIT()
+		do_emit_range_info(start, end, value, inc, cb, uc);
 
 		start = (uint16_t)i;
 		last_value = value = this_value;
@@ -221,8 +230,6 @@ emit:
 		inc = 0;
 		second = false;
 	}
-
-	#undef EMIT
 }
 
 static struct {
