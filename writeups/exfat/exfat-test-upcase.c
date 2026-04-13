@@ -92,7 +92,7 @@ static void run_test (void)
 	char name_b[256];
 
 	for (wint_t a = 1; a <= 0xFFFF; a += 1) {
-		if (should_skip(a) || iswupper(a))
+		if (should_skip(a))
 			continue;
 
 		fprintf(stderr, "%04zX ...\n", (size_t)a);
