@@ -1,0 +1,6 @@
+*.tmp
+*.o
+/exfat-default-upcase
+/exfat-test-upcase
+/exfat-print-all-allowed
+/exfat-profile-upcase.report
