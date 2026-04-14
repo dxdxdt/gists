@@ -8,6 +8,9 @@ int exfat_set_upcase_ptable (struct exfat_upcase_ptable *ptbl,
 	const size_t page_idx = index / EXFAT_UPTBL_PAGESIZE;
 	const size_t idx_in_page = index % EXFAT_UPTBL_PAGESIZE;
 
+	if (value == 0)
+		return 0;
+
 	if (ptbl->pages[page_idx] == NULL) {
 		void *nm = kvcalloc(EXFAT_UPTBL_PAGESIZE, sizeof(__u16), GFP_KERNEL);
 
