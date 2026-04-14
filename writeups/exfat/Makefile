@@ -1,7 +1,6 @@
 .PHONY: all clean profile
 
 all: exfat-default-upcase exfat-test-upcase exfat-print-all-allowed
-profile: exfat-profile-upcase.report
 
 clean:
 	rm -f \
@@ -21,9 +20,9 @@ exfat-test-upcase: exfat-test-upcase.c
 exfat-print-all-allowed: exfat-print-all-allowed.c
 	cc -O2 -o exfat-print-all-allowed exfat-print-all-allowed.c -Wall -Wextra
 
-exfat-profile-upcase.report: exfat-print-all-allowed exfat-profile-upcase.sh
+profile: exfat-print-all-allowed exfat-profile-upcase.sh
 	/bin/time -vo exfat-profile-upcase.time.tmp -- ./exfat-print-all-allowed | \
-		./exfat-profile-upcase.sh 8 > exfat-profile-upcase.out.tmp
+		./exfat-profile-upcase.sh 16 > exfat-profile-upcase.out.tmp
 	cat exfat-profile-upcase.out.tmp exfat-profile-upcase.time.tmp > \
 		exfat-profile-upcase.tmp
 	mv exfat-profile-upcase.tmp exfat-profile-upcase.report

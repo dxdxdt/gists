@@ -33,6 +33,11 @@ cleanup_all () {
 	rm -rf "${MKTEMP_TEMPLATE_PREFIX}"*
 }
 
+report_vmstat () {
+	vmstat -m
+	vmstat -w
+}
+
 # prep the dir
 
 mkdir -p "$WD_PREFIX"
@@ -100,7 +105,7 @@ done
 
 # Pre-test mem report
 echo "----------- pre-run ----------"
-cat /proc/slabinfo
+report_vmstat
 
 # Finally! Run the test
 
@@ -120,7 +125,7 @@ pstderr "done!"
 
 # Report
 echo "---------- post-run ----------"
-cat /proc/slabinfo
+report_vmstat
 echo "------------------------------"
 
 # Clean up
