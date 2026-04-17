@@ -6,5 +6,7 @@ RUN dnf -y update
 RUN dnf -y install make xpath xxd
 
 WORKDIR /opt/dnf-bad-meta-checksum
+RUN make clean
 RUN make test-ok
-RUN make test-faulty-repomd
+RUN make test-failover-404-ok
+RUN make test-failover-checksum-ok

@@ -4,28 +4,33 @@ REPO_CONF = /etc/yum.repos.d/test-bad-meta-checksum.repo
 .PHONY: \
 	all \
 	test-ok \
-	test-faulty-repomd \
+	test-failover-404-ok \
+	test-failover-checksum-ok \
 	clean \
 	all \
 	install-ok \
 	install-faulty \
 	uninstall
 
-all: test-ok test-faulty-repomd
+all: test-ok test-failover-404-ok test-failover-checksum-ok
 
 # sanity test
 test-ok: install-ok
 	dnf clean all
 	dnf makecache --repo=test-bad-meta-checksum
-	dnf --disablerepo='*' --enablerepo=test-bad-meta-checksum -C info kernel \
-		| tee dnf-info.log
+	dnf --disablerepo='*' --enablerepo=test-bad-meta-checksum -C info kernel
 
-# faulty repomd failover
-test-faulty-repomd: install-faulty
+# test failover: from 404 to ok
+test-failover-404-ok: install-404-ok
 	dnf clean all
 	dnf makecache --repo=test-bad-meta-checksum
-	dnf --disablerepo='*' --enablerepo=test-bad-meta-checksum -C info kernel \
-		| tee dnf-info.log
+	dnf --disablerepo='*' --enablerepo=test-bad-meta-checksum -C info kernel
+
+# test failover: from bad checksum to ok
+test-failover-checksum-ok: install-checksum-ok
+	dnf clean all
+	dnf makecache --repo=test-bad-meta-checksum
+	dnf --disablerepo='*' --enablerepo=test-bad-meta-checksum -C info kernel
 
 clean:
 	rm -rf *.tmp *.log repomd_* repomd.* repodata metalink faulty ok
@@ -84,23 +89,30 @@ checksum: repodata
 	mv -f checksum.tmp checksum
 
 # Craft metalink files
-# Only good repomd for sanity check
+# Only one good repomd for sanity check
 test-metalink.ok.xml: craft-metalink.sh ok
 	./craft-metalink.sh repomd.xml ok/repodata/repomd.xml \
 			> test-metalink.ok.xml.tmp
 	mv -f test-metalink.ok.xml.tmp test-metalink.ok.xml
-# Bad, bad, and then good. In that order!
-test-metalink.faulty.xml: craft-metalink.sh ok 404 checksum
-	./craft-metalink.sh repomd.xml checksum/repodata/repomd.xml 404/repodata/repomd.xml ok/repodata/repomd.xml \
-			> test-metalink.faulty.xml.tmp
-	mv -f test-metalink.faulty.xml.tmp test-metalink.faulty.xml
+# Bad, and then good. In that order!
+test-metalink.404-ok.xml: craft-metalink.sh ok 404
+	./craft-metalink.sh repomd.xml 404/repodata/repomd.xml ok/repodata/repomd.xml \
+			> test-metalink.404-ok.xml.tmp
+	mv -f test-metalink.404-ok.xml.tmp test-metalink.404-ok.xml
+test-metalink.checksum-ok.xml: craft-metalink.sh ok checksum
+	./craft-metalink.sh repomd.xml checksum/repodata/repomd.xml ok/repodata/repomd.xml \
+			> test-metalink.checksum-ok.xml.tmp
+	mv -f test-metalink.checksum-ok.xml.tmp test-metalink.checksum-ok.xml
 
 # Craft repos
 install-ok: ./craft-repo.sh test-metalink.ok.xml
 	./craft-repo.sh test-metalink.ok.xml > repo.tmp
 	mv -f repo.tmp $(REPO_CONF)
-install-faulty: ./craft-repo.sh test-metalink.faulty.xml
-	./craft-repo.sh test-metalink.faulty.xml > repo.tmp
+install-404-ok: ./craft-repo.sh test-metalink.404-ok.xml
+	./craft-repo.sh test-metalink.404-ok.xml > repo.tmp
+	mv -f repo.tmp $(REPO_CONF)
+install-checksum-ok: ./craft-repo.sh test-metalink.checksum-ok.xml
+	./craft-repo.sh test-metalink.checksum-ok.xml > repo.tmp
 	mv -f repo.tmp $(REPO_CONF)
 
 uninstall:
