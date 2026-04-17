@@ -1,0 +1,12 @@
+name: run-dnf-bad-meta-checksum
+run-name: Run dnf-bad-meta-checksum ("bad checksum poisoning")
+on:
+  workflow_dispatch:
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          cd writeups/dnf-bad-meta-checksum
+          docker build .
