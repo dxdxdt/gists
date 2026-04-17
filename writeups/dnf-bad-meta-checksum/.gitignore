@@ -1,0 +1,10 @@
+/*.tmp
+/*.log
+/repomd_*
+/repomd.xml
+/test-*
+/metalink
+/repodata
+/ok
+/404
+/checksum
