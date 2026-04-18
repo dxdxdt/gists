@@ -22,26 +22,32 @@ jobs:
       fail-fast: false
       matrix:
         run:
-          - cd writeups/zm           && make clean test
-          - cd writeups/lseek        && make clean test
-          - cd writeups/inet-pnp     && make clean test
-          - cd writeups/ipv6/eyeball && make clean test
+          - cd writeups/zm           && gmake clean test
+          - cd writeups/lseek        && gmake clean test
+          - cd writeups/inet-pnp     && gmake clean test
+          - cd writeups/ipv6/eyeball && gmake clean test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       # All this because variable cannot be referenced in '- uses:'
+      - uses: vmactions/solaris-vm@v1
+        with:
+          release: "11.4-gcc"
+          prepare: pkgutil -y -i gmake
+          run: ${{ matrix.run }} CC=gcc
       - uses: vmactions/freebsd-vm@v1
         with:
+          prepare: pkg install -y gmake
           run: ${{ matrix.run }}
       - uses: vmactions/openbsd-vm@v1
         with:
+          prepare: pkg_add gmake
           run: ${{ matrix.run }}
       - uses: vmactions/netbsd-vm@v1
         with:
-          run: ${{ matrix.run }}
-      - uses: vmactions/solaris-vm@v1
-        with:
+          prepare: pkg_add gmake
           run: ${{ matrix.run }}
       - uses: vmactions/dragonflybsd-vm@v1
         with:
+          prepare: pkg install -y gmake
           run: ${{ matrix.run }}

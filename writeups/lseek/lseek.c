@@ -9,7 +9,7 @@
 
 #define ARGV0 "lseek"
 
-#if defined(SEEK_HOLE) && defined(SEEK_DATA)
+#if defined(SEEK_DATA) && defined(SEEK_HOLE)
 #define HAS_SEEK_DH
 #endif
 
@@ -50,15 +50,19 @@ out:
 	return ret;
 }
 
+#endif
+
 static void usage (void) {
 	fprintf(stderr, "Usage: "ARGV0" FILE ...\n");
+#ifdef HAS_SEEK_DH
+	fprintf(stderr, "Tests SEEK_DATA and SEEK_HOLE\n");
+#else
+	fprintf(stderr, "Tests lseek(..., 3)\n");
+#endif
 	exit(2);
 }
 
-#endif
-
 int main (int argc, const char **argv) {
-#ifdef HAS_SEEK_DH
 	unsigned int succ = 0, fail = 0;
 
 	if (argc <= 1) {
@@ -72,6 +76,7 @@ int main (int argc, const char **argv) {
 		}
 	}
 
+#ifdef HAS_SEEK_DH
 	for (int i = 1; i < argc; i += 1) {
 		const char *path = argv[i];
 		off_t a = 0, b = 0;
@@ -85,14 +90,35 @@ int main (int argc, const char **argv) {
 			fprintf(stderr, ARGV0": %s: %s\n", path, strerror(errno));
 		}
 	}
+#else
+	/* Just test test invalid whence */
+	for (int i = 1; i < argc; i += 1) {
+		const char *path = argv[i];
+		const int fd = open(path, O_RDONLY);
+
+		if (fd < 0) {
+			fail += 1;
+			fprintf(stderr, ARGV0": %s: %s\n", path, strerror(errno));
+		}
+		else {
+			off_t ret;
+			const char *msg;
+
+			errno = 0;
+			ret = lseek(fd, 0, 3);
+			msg = strerror(errno);
+			fprintf(stderr, ARGV0": %s: %lld %s\n",
+				path, (long long)ret, msg == NULL ? "(null)" : msg);
+
+			close(fd);
+
+			succ += 1;
+		}
+	}
+#endif
 
 	if (fail > 0) {
 		return succ > 0 ? 3 : 1;
 	}
 	return 0;
-#else
-	errno = ENOSYS;
-	perror(ARGV0);
-	return 1;
-#endif
 }
