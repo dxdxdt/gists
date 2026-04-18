@@ -9,6 +9,7 @@ jobs:
       matrix:
         run:
           - cd writeups/zm           && make clean test
+          - cd writeups/lseek        && make clean test
           - cd writeups/inet-pnp     && make clean test
           - cd writeups/ipv6/eyeball && make clean test
         os: [windows, ubuntu, macos]
@@ -22,6 +23,7 @@ jobs:
       matrix:
         run:
           - cd writeups/zm           && make clean test
+          - cd writeups/lseek        && make clean test
           - cd writeups/inet-pnp     && make clean test
           - cd writeups/ipv6/eyeball && make clean test
     runs-on: ubuntu-latest
