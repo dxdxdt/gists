@@ -3,28 +3,41 @@ run-name: Run various POSIX programs on different platforms
 on:
   workflow_dispatch:
 jobs:
-  inet-pnp:
+  main-runners:
     strategy:
       fail-fast: false
       matrix:
+        run:
+          - cd writeups/inet-pnp     && make clean test
+          - cd writeups/ipv6/eyeball && make clean test
         os: [windows, ubuntu, macos]
-    name: Run inet-pnp on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: |
-          cd writeups/inet-pnp
-          make test
-
-  eyeball:
+      - uses: actions/checkout@v6
+      - run: ${{ matrix.run }}
+  vmactions-bsd:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows, ubuntu, macos]
-    name: Run eyeball on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}-latest
+        run:
+          - cd writeups/inet-pnp     && make clean test
+          - cd writeups/ipv6/eyeball && make clean test
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: |
-          cd writeups/ipv6/eyeball
-          make test
+      - uses: actions/checkout@v6
+      # All this because variable cannot be referenced in '- uses:'
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          run: ${{ matrix.run }}
+      - uses: vmactions/openbsd-vm@v1
+        with:
+          run: ${{ matrix.run }}
+      - uses: vmactions/netbsd-vm@v1
+        with:
+          run: ${{ matrix.run }}
+      - uses: vmactions/solaris-vm@v1
+        with:
+          run: ${{ matrix.run }}
+      - uses: vmactions/dragonflybsd-vm@v1
+        with:
+          run: ${{ matrix.run }}
