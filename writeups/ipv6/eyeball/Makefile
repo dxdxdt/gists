@@ -1,4 +1,11 @@
-CC ?= cc
+ifeq ($(OS),Windows_NT)
+	CC ?= x86_64-w64-mingw32-gcc
+	EXEC_SUFFIX ?= .exe
+	LD_ADD ?= -lws2_32 -lpthread
+else
+	CC ?= cc
+	LD_ADD ?= -lpthread
+endif
 
 .PHONY: clean test
 
