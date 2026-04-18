@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -9,12 +10,19 @@
 #include <getopt.h>
 #include <unistd.h>
 #include <fcntl.h>
+#ifdef _POSIX_MAPPED_FILES
 #include <sys/mman.h>
+#endif
 
 #define ARGV0 "zm"
+
+#if defined(SIGALRM)
 #define ALARM_INTERVAL (5)
+#endif
+
 static volatile unsigned long long size;
 
+#ifdef ALARM_INTERVAL
 static void on_alarm (const int sn) {
 	assert(sn == SIGALRM);
 	(void)sn;
@@ -23,6 +31,7 @@ static void on_alarm (const int sn) {
 
 	alarm(ALARM_INTERVAL);
 }
+#endif
 
 static void do_memcmp (const size_t pagesize, const uint8_t *m) {
 	uint8_t zm[pagesize];
@@ -42,7 +51,7 @@ static void do_memcmp (const size_t pagesize, const uint8_t *m) {
 
 static void with_zm (const size_t pagesize) {
 	static const char *DEV_ZERO = "/dev/zero";
-	uint8_t *m;
+	uint8_t *m = NULL;
 	int fd;
 
 	fd = open(DEV_ZERO, O_RDONLY);
@@ -51,15 +60,24 @@ static void with_zm (const size_t pagesize) {
 		exit(1);
 	}
 
+#ifdef _POSIX_MAPPED_FILES
 	m = mmap(NULL, (size_t)size, PROT_READ, MAP_SHARED, fd, 0);
+	assert(m != NULL);
 	if (m == MAP_FAILED) {
+		m = NULL;
+	}
+#else
+	errno = ENOSYS;
+#endif
+	if (m == NULL) {
 		fprintf(stderr, "-s %llu: %s\n", size, strerror(errno));
 		exit(1);
 	}
 
 	do_memcmp(pagesize, m);
-
+#ifdef _POSIX_MAPPED_FILES
 	munmap(m, (size_t)size);
+#endif
 	close(fd);
 }
 
@@ -82,7 +100,12 @@ static void usage (void) {
 }
 
 int main (const int argc, const char **argv) {
-	const long pagesize = sysconf(_SC_PAGESIZE);
+	const long pagesize =
+#ifdef _SC_PAGESIZE
+		sysconf(_SC_PAGESIZE);
+#else
+		4096;
+#endif
 	unsigned int mode = 0;
 	int ret;
 
@@ -126,9 +149,15 @@ opts_out:
 	if (size == 0)
 		usage();
 
-	ret = signal(SIGALRM, on_alarm) != SIG_ERR;
+#ifdef ALARM_INTERVAL
+	struct sigaction sa = {
+		.sa_handler = on_alarm,
+	};
+
+	ret = sigaction(SIGALRM, &sa, NULL) == 0;
 	assert(ret);
 	alarm(ALARM_INTERVAL);
+#endif
 
 	switch (mode) {
 	case 1:
@@ -141,8 +170,11 @@ opts_out:
 		usage();
 	}
 
+#ifdef ALARM_INTERVAL
 	alarm(0);
-	signal(SIGALRM, SIG_DFL);
+	sa.sa_handler = SIG_DFL;
+	sigaction(SIGALRM, &sa, NULL);
+#endif
 
 	return 0;
 }

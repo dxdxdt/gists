@@ -1,5 +1,5 @@
 name: run-posix-tests
-run-name: Run various POSIX programs on different platforms
+run-name: Run various POSIX tests on different platforms
 on:
   workflow_dispatch:
 jobs:
@@ -8,6 +8,7 @@ jobs:
       fail-fast: false
       matrix:
         run:
+          - cd writeups/zm           && make clean test
           - cd writeups/inet-pnp     && make clean test
           - cd writeups/ipv6/eyeball && make clean test
         os: [windows, ubuntu, macos]
@@ -20,6 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         run:
+          - cd writeups/zm           && make clean test
           - cd writeups/inet-pnp     && make clean test
           - cd writeups/ipv6/eyeball && make clean test
     runs-on: ubuntu-latest
