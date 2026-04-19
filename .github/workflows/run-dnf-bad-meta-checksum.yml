@@ -3,10 +3,25 @@ run-name: Run dnf-bad-meta-checksum ("bad checksum poisoning")
 on:
   workflow_dispatch:
 jobs:
-  run:
+
+  run-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: |
           cd writeups/dnf-bad-meta-checksum
           docker build .
+
+  collect-logs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: |
+          pushd writeups/dnf-bad-meta-checksum
+          docker build --build-arg=MASK_FAIL=true . -t build
+          popd
+          docker run --rm -i build cat /var/log/dnf5.log > log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: log
+          path: log
