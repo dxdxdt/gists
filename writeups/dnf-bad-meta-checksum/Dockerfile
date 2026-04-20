@@ -12,4 +12,5 @@ RUN ./set-debuglevel.sh
 RUN make clean
 RUN make test-ok || ${MASK_FAIL}
 RUN make test-failover-404-ok || ${MASK_FAIL}
+RUN make test-failover-checksum-ok-no-zchunk || ${MASK_FAIL}
 RUN make test-failover-checksum-ok || ${MASK_FAIL}

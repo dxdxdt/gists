@@ -26,7 +26,12 @@ test-failover-404-ok: install-404-ok
 	dnf makecache --repo=test-bad-meta-checksum
 	dnf --disablerepo='*' --enablerepo=test-bad-meta-checksum -C info kernel
 
-# test failover: from bad checksum to ok
+# test failover: from bad checksum to ok (w/o zchunk)
+test-failover-checksum-ok-no-zchunk: install-checksum-ok
+	dnf clean all
+	dnf --setopt=zchunk=0 --disablerepo='*' --enablerepo=test-bad-meta-checksum info kernel
+
+# test failover: from bad checksum to ok (w zchunk)
 test-failover-checksum-ok: install-checksum-ok
 	dnf clean all
 	dnf makecache --repo=test-bad-meta-checksum
