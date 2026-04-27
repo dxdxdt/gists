@@ -61,6 +61,10 @@ static void with_zm (const size_t pagesize) {
 	}
 
 #ifdef _POSIX_MAPPED_FILES
+	/*
+	 * Note to my future self: MAP_SHARED|MAP_ANON doesn't work. There's no
+	 * way of getting rid of /dev/zero here. Period.
+	 */
 	m = mmap(NULL, (size_t)size, PROT_READ, MAP_SHARED, fd, 0);
 	assert(m != NULL);
 	if (m == MAP_FAILED) {
