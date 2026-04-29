@@ -39,8 +39,16 @@ static_assert(0xFFFF / EXFAT_UPTBL_PAGESIZE < EXFAT_UPTBL_ARRSIZE);
 /* exfat/upcase.c */
 int exfat_set_upcase_ptable (struct exfat_upcase_ptable *ptbl,
 		const __u16 index, const __u16 value);
-__u16 exfat_lookup_upcase_ptable (const struct exfat_upcase_ptable *ptbl,
-		const __u16 index);
+
+static inline __u16 exfat_lookup_upcase_ptable(const struct exfat_upcase_ptable *ptbl,
+		const __u16 index)
+{
+	const size_t page_idx = index / EXFAT_UPTBL_PAGESIZE;
+	const size_t idx_in_page = index % EXFAT_UPTBL_PAGESIZE;
+
+	return ptbl->pages[page_idx] == NULL ? 0 : ptbl->pages[page_idx][idx_in_page];
+}
+
 void exfat_free_upcase_ptable (struct exfat_upcase_ptable *ptbl);
 int exfat_populate_upcase_ptable (struct exfat_upcase_ptable *ptbl,
 		const struct exfat_upcase_range_info *ri,

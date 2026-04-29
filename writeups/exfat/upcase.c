@@ -25,15 +25,6 @@ int exfat_set_upcase_ptable (struct exfat_upcase_ptable *ptbl,
 	return 0;
 }
 
-__u16 exfat_lookup_upcase_ptable (const struct exfat_upcase_ptable *ptbl,
-		const __u16 index)
-{
-	const size_t page_idx = index / EXFAT_UPTBL_PAGESIZE;
-	const size_t idx_in_page = index % EXFAT_UPTBL_PAGESIZE;
-
-	return ptbl->pages[page_idx] == NULL ? 0 : ptbl->pages[page_idx][idx_in_page];
-}
-
 void exfat_free_upcase_ptable (struct exfat_upcase_ptable *ptbl)
 {
 	if (ptbl == NULL)
@@ -52,7 +43,7 @@ int exfat_populate_upcase_ptable (struct exfat_upcase_ptable *ptbl,
 {
 	int err;
 
-	for (__u16 i = 0; i < cnt; i++) {
+	for (size_t i = 0; i < cnt; i++) {
 		/* Memory safety: allow the value to wrap around but not the index */
 		const unsigned int step = ri[i].inc;
 		unsigned int index = ri[i].start;
