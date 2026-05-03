@@ -234,16 +234,15 @@ emit:
 
 static struct {
 	size_t len;
-	struct exfat_upcase_range_info arr[EXFAT_UPTBL_SIZE];
 } ric_ctx;
 
 static void range_info_callback_human (const uint16_t start, const uint16_t end,
 				       const uint16_t value, const uint16_t inc,
 				       void *)
 {
-	struct exfat_upcase_range_info *ri = ric_ctx.arr + ric_ctx.len;
+	struct exfat_upcase_range_info *ri = def_utbl_ri + ric_ctx.len;
 
-	assert(ric_ctx.len < ARRAY_SIZE(ric_ctx.arr));
+	assert(ric_ctx.len < EXFAT_UPTBL_SIZE);
 
 	ri->start = start;
 	ri->end = end;
@@ -260,15 +259,18 @@ static void print_ptable_human (const uint16_t *tbl) {
 
 	emit_range_info(tbl, range_info_callback_human, NULL);
 
-	err = exfat_populate_upcase_ptable(&ptbl, ric_ctx.arr, ric_ctx.len);
+	err = exfat_populate_upcase_ptable(&ptbl);
 	if (!err)
 		for (unsigned int i = 0; i <= 0xFFFF; i++) {
 			a = exfat_lookup_upcase_ptable(&ptbl, (uint16_t)i);
 			b = tbl[i];
 
+			if (b == 0)
+				b = i; /* cover up identities */
+
 			assert(a == b);
 
-			if (a != 0)
+			if (a != i)
 				print_conv((wint_t)i, (wint_t)a, NULL);
 		}
 
@@ -279,15 +281,18 @@ static void range_info_callback_c (const uint16_t start, const uint16_t end,
 				   const uint16_t value, const uint16_t inc,
 				   void *)
 {
-	printf("	{\n"
-		"		/* (index = %zu, len = %d) */\n"
-		"		.start = 0x%04X,\n"
-		"		.end   = 0x%04X,\n"
-		"		.value = 0x%04X,\n"
-		"		.inc   = 0x%04X,\n"
-		"	},\n",
-		ric_ctx.len, end - start, start, end, value, inc);
-
+	if (start == 0 && end == 0 && value == 0 && inc == 0)
+		printf("	{ }\n");
+	else {
+		printf("	{\n"
+			"		/* (index = %zu, len = %d) */\n"
+			"		.start = 0x%04X,\n"
+			"		.end   = 0x%04X,\n"
+			"		.value = 0x%04X,\n"
+			"		.inc   = 0x%04X,\n"
+			"	},\n",
+			ric_ctx.len, end - start, start, end, value, inc);
+	}
 	ric_ctx.len++;
 }
 
@@ -369,9 +374,10 @@ int main (int argc, const char **argv)
 		print_table_errors(table);
 		break;
 	case OT_PAGED_TABLE:
-		if (ui.mode_c)
+		if (ui.mode_c) {
 			emit_range_info(table, range_info_callback_c, NULL);
-		else
+			range_info_callback_c(0, 0, 0, 0, NULL);
+		} else
 			print_ptable_human(table);
 		break;
 	default:

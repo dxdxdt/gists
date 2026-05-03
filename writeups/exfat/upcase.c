@@ -2,7 +2,9 @@
 
 #include "upcase.h"
 
-int exfat_set_upcase_ptable (struct exfat_upcase_ptable *ptbl,
+struct exfat_upcase_range_info def_utbl_ri[EXFAT_UPTBL_ARRSIZE + 1] __initconst;
+
+int exfat_set_upcase_ptable(struct exfat_upcase_ptable *ptbl,
 		const __u16 index, const __u16 value)
 {
 	const size_t page_idx = index / EXFAT_UPTBL_PAGESIZE;
@@ -25,7 +27,7 @@ int exfat_set_upcase_ptable (struct exfat_upcase_ptable *ptbl,
 	return 0;
 }
 
-void exfat_free_upcase_ptable (struct exfat_upcase_ptable *ptbl)
+void exfat_free_upcase_ptable(struct exfat_upcase_ptable *ptbl)
 {
 	if (ptbl == NULL)
 		return;
@@ -37,26 +39,27 @@ void exfat_free_upcase_ptable (struct exfat_upcase_ptable *ptbl)
 	ptbl->cnt = 0;
 }
 
-int exfat_populate_upcase_ptable (struct exfat_upcase_ptable *ptbl,
-		const struct exfat_upcase_range_info *ri,
-		const size_t cnt)
+int __init exfat_populate_upcase_ptable(struct exfat_upcase_ptable *ptbl)
 {
-	int err;
+	const struct exfat_upcase_range_info *ri;
+	int ret;
 
-	for (size_t i = 0; i < cnt; i++) {
+	for (ri = def_utbl_ri; ri->inc != 0; ri++) {
 		/* Memory safety: allow the value to wrap around but not the index */
-		const unsigned int step = ri[i].inc;
-		unsigned int index = ri[i].start;
-		__u16 value = ri[i].value;
+		const unsigned int step = ri->inc;
+		unsigned int index = ri->start;
+		__u16 value = ri->value;
 
-		if (step == 0 || index >= ri[i].end)
+		if (index >= ri->end) {
 			/* Damaged .rodata */
-			return -EINVAL;
+			ret = -EINVAL;
+			goto err;
+		}
 
-		while (index < ri[i].end) {
-			err = exfat_set_upcase_ptable(ptbl, index, value);
-			if (err)
-				return err;
+		while (index < ri->end) {
+			ret = exfat_set_upcase_ptable(ptbl, index, value);
+			if (ret)
+				goto err;
 
 			index += step;
 			value += step;
@@ -64,4 +67,7 @@ int exfat_populate_upcase_ptable (struct exfat_upcase_ptable *ptbl,
 	}
 
 	return 0;
+err:
+	exfat_free_upcase_ptable(ptbl);
+	return ret;
 }
