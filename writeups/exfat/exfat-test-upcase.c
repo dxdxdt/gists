@@ -19,9 +19,13 @@
 
 static struct {
 	const char *path;
-	bool mode_u;
-	bool mode_l;
-} ui;
+	uint16_t start;
+	uint16_t step;
+	bool mode_u:1;
+	bool mode_l:1;
+} ui = {
+	.step = 1,
+};
 
 static void do_test(const size_t i, const wint_t n, const char *a, const char *b)
 {
@@ -48,36 +52,56 @@ static void do_test(const size_t i, const wint_t n, const char *a, const char *b
 
 static bool should_skip (const wint_t c)
 {
-	static const unsigned short exfat_bad_uni_chars[] = {
-		0x0022, '.',    0x002A, 0x002F, 0x003A,
-		0x003C, 0x003E, 0x003F, 0x005C, 0x007C,
-		0
-	};
-
-	if (!iswprint(c)) {
+	switch (c) {
+	case 0x0022: case '.':    case 0x002A: case 0x002F: case 0x003A:
+	case 0x003C: case 0x003E: case 0x003F: case 0x005C: case 0x007C:
 		return true;
 	}
 
-	for (const unsigned short *p = exfat_bad_uni_chars; *p != 0; p += 1) {
-		if (c == *p)
-			return true;
-	}
-
-	return false;
+	return !iswprint(c);
 }
 
 static void usage (const char *argv0)
 {
-	fprintf(stderr, "Usage: %s [-ul] [PATH]\n", argv0);
+	fprintf(stderr, "Usage: %s [-ul] [-S START] [-C STEP] [PATH]\n", argv0);
 	exit(2);
+}
+
+static uint16_t read_num_opt (const char *opt, const char *str)
+{
+	int saved_errno;
+	unsigned long tmp;
+	char *end = NULL;
+
+	saved_errno = errno;
+	errno = 0;
+
+	tmp = strtoul(optarg, &end, 0);
+	if (tmp > UINT16_MAX)
+		errno = EOVERFLOW;
+	if (tmp == 0)
+		errno = EINVAL;
+
+	if (errno != 0) {
+		fprintf(stderr, "%s %s: %s\n", opt, str, strerror(errno));
+		exit(2);
+	}
+	if (end != NULL && *end != 0) {
+		fprintf(stderr, "%s %s: garbage at the end of uint16 value\n", opt, str);
+		exit(2);
+	}
+
+	errno = saved_errno;
+	return (uint16_t)tmp;
 }
 
 static void parse_opts (int argc, const char **argv)
 {
 	int ret;
 
+
 	for (;;) {
-		ret = getopt(argc, (char *const*)argv, "ul");
+		ret = getopt(argc, (char *const*)argv, "ulS:C:");
 
 		switch (ret) {
 		case 'u':
@@ -85,6 +109,12 @@ static void parse_opts (int argc, const char **argv)
 			break;
 		case 'l':
 			ui.mode_l = true;
+			break;
+		case 'S':
+			ui.start = read_num_opt("-S", optarg);
+			break;
+		case 'C':
+			ui.step = read_num_opt("-C", optarg);
 			break;
 		case -1:
 			goto out;
@@ -106,7 +136,7 @@ static void run_test (void)
 	char name_a[256];
 	char name_b[256];
 
-	for (wint_t a = 1; a <= 0xFFFF; a += 1) {
+	for (wint_t a = ui.start; a <= 0xFFFF; a += ui.step) {
 		if (should_skip(a))
 			continue;
 
@@ -132,7 +162,7 @@ static void run_test_f (int(*filter)(wint_t), wint_t(*conv)(wint_t))
 	char name_a[256];
 	char name_b[256];
 
-	for (wint_t a = 1; a <= 0xFFFF; a += 1) {
+	for (wint_t a = ui.start; a <= 0xFFFF; a += ui.step) {
 		wint_t b;
 
 		if (should_skip(a) || !filter(a))
@@ -163,6 +193,7 @@ int main (int argc, const char **argv)
 	(void)lc;
 
 	parse_opts(argc, argv);
+	fprintf(stderr, "start=0x%04"PRIX16", step=0x%04"PRIX16"\n", ui.start, ui.step);
 
 	if (ui.path != NULL)
 		if (chdir(ui.path) != 0) {
