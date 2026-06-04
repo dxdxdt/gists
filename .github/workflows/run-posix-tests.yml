@@ -12,7 +12,11 @@ jobs:
           - cd writeups/lseek        && make clean test
           - cd writeups/inet-pnp     && make clean test
           - cd writeups/ipv6/eyeball && make clean test
+          - cd writeups/libdivide    && make clean benchmark
         runner: [windows-latest, ubuntu-latest, macos-latest]
+        exclude:
+          - run: cd writeups/libdivide    && make clean benchmark
+            runner: windows-latest
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
