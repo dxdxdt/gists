@@ -4,10 +4,12 @@ W = 640
 H = 360
 
 benchmark: iterative-div
-	./iterative-div -t5    < /dev/urandom > /dev/null || echo $$?
-	./iterative-div -t5 -c < /dev/urandom > /dev/null || echo $$?
-	./iterative-div -t5    < /dev/zero >    /dev/null || echo $$?
-	./iterative-div -t5 -c < /dev/zero >    /dev/null || echo $$?
+	./iterative-div -t5     < /dev/urandom > /dev/null || echo $$?
+	./iterative-div -t5 -c  < /dev/urandom > /dev/null || echo $$?
+	./iterative-div -t5 -cb < /dev/urandom > /dev/null || echo $$?
+	./iterative-div -t5     < /dev/zero >    /dev/null || echo $$?
+	./iterative-div -t5 -c  < /dev/zero >    /dev/null || echo $$?
+	./iterative-div -t5 -cb < /dev/zero >    /dev/null || echo $$?
 
 iterative-div: iterative-div.c libdivide.h
 	cc -mtune=native -march=native -g -O2 -Wall -Wextra \

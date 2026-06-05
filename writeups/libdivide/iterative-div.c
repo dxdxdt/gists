@@ -46,9 +46,11 @@ static uint8_t acc_cnt = 1;
 static unsigned long iter_cnt;
 /* Set to use fast division. Clear to use DIV instruction of the host CPU */
 static bool cache_op = false;
+/* Use branch-free variant of libdivide  */
+static bool branch_free = false;
 /* Set to skip calculation of `frame_avg` */
 static bool passthrough = false;
-/* Execution timeout */
+// /* Execution timeout */
 static unsigned int timeout;
 static bool help;
 
@@ -57,7 +59,7 @@ static bool help;
 static __attribute__((noinline)) void parse_args(int argc, char **argv)
 {
 	for (;;) {
-		const int c = getopt(argc, (char *const *)argv, "s:d:cpt:h");
+		const int c = getopt(argc, (char *const *)argv, "s:d:cpt:bh");
 
 		if (c < 0)
 			break;
@@ -89,6 +91,9 @@ static __attribute__((noinline)) void parse_args(int argc, char **argv)
 				fprintf(stderr, ARGV0": -t %s: %s\n", optarg, strerror(EINVAL));
 				exit(2);
 			}
+			break;
+		case 'b':
+			branch_free = true;
 			break;
 		case 'h':
 			help = true;
@@ -137,11 +142,69 @@ static __attribute__((noinline)) int do_full_io(const int fd, const int what, vo
 	return 1;
 }
 
+static void do_average_frame(void)
+{
+	const bool ovf = __builtin_add_overflow(acc_cnt, 1, &acc_cnt);
+
+	assert(!ovf);
+	(void)ovf;
+
+	if (cache_op) {
+		if (branch_free) {
+			struct libdivide_u32_branchfree_t d = libdivide_u32_branchfree_gen(acc_cnt);
+
+			for (size_t i = 0; i < frame_size; i += 1) {
+				uint32_t avg = frame_avg[i];
+
+				avg += frame[i];
+				frame[i] = libdivide_u32_branchfree_do(avg, &d);
+				frame_avg[i] = avg;
+			}
+			if (acc_cnt > divisor) {
+				for (size_t i = 0; i < frame_size; i += 1)
+					frame_avg[i] -= libdivide_u32_branchfree_do(frame_avg[i],
+										&d);
+
+				acc_cnt = divisor;
+			}
+		} else {
+			struct libdivide_u32_t d = libdivide_u32_gen(acc_cnt);
+
+			for (size_t i = 0; i < frame_size; i += 1) {
+				uint32_t avg = frame_avg[i];
+
+				avg += frame[i];
+				frame[i] = libdivide_u32_do(avg, &d);
+				frame_avg[i] = avg;
+			}
+			if (acc_cnt > divisor) {
+				for (size_t i = 0; i < frame_size; i += 1)
+					frame_avg[i] -= libdivide_u32_do(frame_avg[i], &d);
+
+				acc_cnt = divisor;
+			}
+		}
+	} else {
+		for (size_t i = 0; i < frame_size; i += 1) {
+			uint32_t avg = frame_avg[i];
+
+			avg += frame[i];
+			frame[i] = avg / acc_cnt;
+			frame_avg[i] = avg;
+		}
+		if (acc_cnt > divisor) {
+			for (size_t i = 0; i < frame_size; i += 1)
+				frame_avg[i] -= frame_avg[i] / acc_cnt;
+
+			acc_cnt = divisor;
+		}
+	}
+}
+
 static __attribute__((noinline)) void do_iteration(void)
 {
 	int fr;
 	size_t l;
-	bool ovf;
 
 	l = frame_size;
 	fr = do_full_io(STDIN_FILENO, 0, frame, &l);
@@ -155,45 +218,8 @@ static __attribute__((noinline)) void do_iteration(void)
 		exit(1);
 	}
 
-	if (!passthrough) {
-		ovf = __builtin_add_overflow(acc_cnt, 1, &acc_cnt);
-
-		assert(!ovf);
-		(void)ovf;
-
-		if (cache_op) {
-			struct libdivide_u32_branchfree_t d = libdivide_u32_branchfree_gen(acc_cnt);
-
-			for (size_t i = 0; i < frame_size; i += 1) {
-				uint32_t avg = frame_avg[i];
-
-				avg += frame[i];
-				frame[i] = libdivide_u32_branchfree_do(avg, &d);
-				frame_avg[i] = avg;
-			}
-			if (acc_cnt > divisor) {
-				for (size_t i = 0; i < frame_size; i += 1)
-					frame_avg[i] -= libdivide_u32_branchfree_do(frame_avg[i],
-										    &d);
-
-				acc_cnt = divisor;
-			}
-		} else {
-			for (size_t i = 0; i < frame_size; i += 1) {
-				uint32_t avg = frame_avg[i];
-
-				avg += frame[i];
-				frame[i] = avg / acc_cnt;
-				frame_avg[i] = avg;
-			}
-			if (acc_cnt > divisor) {
-				for (size_t i = 0; i < frame_size; i += 1)
-					frame_avg[i] -= frame_avg[i] / acc_cnt;
-
-				acc_cnt = divisor;
-			}
-		}
-	}
+	if (!passthrough)
+		do_average_frame();
 
 	l = frame_size;
 	fr = do_full_io(STDOUT_FILENO, 1, frame, &l);
@@ -211,11 +237,12 @@ int main(int argc, char **argv)
 		struct timespec dt;
 	} ts;
 	bool ovf = false;
+	const char *divide_type = NULL;
 
 	parse_args(argc, argv);
 
 	if (help) {
-		printf("Usage: "ARGV0" [-cph] [-s FRAME_SIZE] [-d DIVISOR] [-t TIMEOUT]\n");
+		printf("Usage: "ARGV0" [-cpbh] [-s FRAME_SIZE] [-d DIVISOR] [-t TIMEOUT]\n");
 		exit(0);
 	}
 
@@ -227,9 +254,17 @@ int main(int argc, char **argv)
 	if (timeout != 0)
 		alarm(timeout);
 
+	if (cache_op) {
+		if (branch_free)
+			divide_type = "branchless magic";
+		else
+			divide_type = "branchy magic";
+	} else
+		divide_type = "processor";
+
 	fprintf(stderr, ARGV0": frame_size = %zu\n", frame_size);
 	fprintf(stderr, ARGV0": divisor    = %"PRIu32"\n", divisor);
-	fprintf(stderr, ARGV0": divide     = %s\n", cache_op ? "magic" : "processor");
+	fprintf(stderr, ARGV0": divide     = %s\n", divide_type);
 
 	frame = malloc(frame_size);
 	frame_avg = calloc(frame_size, sizeof(uint32_t));
