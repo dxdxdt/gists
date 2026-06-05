@@ -2,6 +2,8 @@
 
 Frame averaging logic: [iterative-div.c](iterative-div.c)
 
+[showcase.webm](https://github.com/user-attachments/assets/0dfa1aa8-3d36-4d63-8638-f77cf413e27c)
+
 <video controls src="showcase.webm" title="showcase.webm"></video>
 
 ## Benchmark (default)
