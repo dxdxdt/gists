@@ -39,7 +39,7 @@ static const struct timespec REPORT_INTV = { .tv_sec = 1, .tv_nsec = 0, };
 static size_t frame_size = 640 * 360 * 3;
 static uint8_t *frame = NULL;
 static uint32_t *frame_avg = NULL; /* Sum of recent frames, capped at `divisor` */
-static uint8_t divisor = 100;
+static uint8_t divisor = 180;
 /* Number of currently accumulated frames */
 static uint8_t acc_cnt = 1;
 /* Iteration count since the last report */
@@ -104,17 +104,53 @@ static __attribute__((noinline)) void parse_args(int argc, char **argv)
 	}
 }
 
-static __attribute__((noinline)) void do_iteration(void)
+static __attribute__((noinline)) int do_full_io(const int fd, const int what, void *buf, size_t *len)
 {
 	ssize_t ioret;
+	char *p = buf;
+
+	while (*len > 0) {
+		switch (what) {
+		case 0:
+			ioret = read(fd, p, *len);
+			break;
+		case 1:
+			ioret = write(fd, p, *len);
+			break;
+		default:
+			abort();
+		}
+
+		if (ioret < 0)
+			return -1;
+		if (ioret == 0) {
+			if (what == 0)
+				return 0;
+			errno = EIO;
+			return -1;
+		}
+
+		p += ioret;
+		*len -= (size_t)ioret;
+	}
+
+	return 1;
+}
+
+static __attribute__((noinline)) void do_iteration(void)
+{
+	int fr;
+	size_t l;
 	bool ovf;
 
-	ioret = read(STDIN_FILENO, frame, frame_size);
-	if (ioret != (ssize_t)frame_size) {
-		if (ioret < 0)
-			perror(ARGV0": /dev/urandom");
+	l = frame_size;
+	fr = do_full_io(STDIN_FILENO, 0, frame, &l);
+	if (fr <= 0) {
+		if (fr < 0)
+			perror(ARGV0": stdin");
 		else
-			fprintf(stderr, ARGV0": /dev/urandom: read fell short\n");
+			fprintf(stderr, ARGV0": stdin: read fell short(read = %zu, buf = %zu)\n",
+				l, frame_size);
 
 		exit(1);
 	}
@@ -159,13 +195,10 @@ static __attribute__((noinline)) void do_iteration(void)
 		}
 	}
 
-	ioret = write(STDOUT_FILENO, frame, frame_size);
-	if (ioret != (ssize_t)frame_size) {
-		if (ioret < 0)
-			perror(ARGV0": stdout");
-		else
-			fprintf(stderr, ARGV0": stdout: write fell short\n");
-
+	l = frame_size;
+	fr = do_full_io(STDOUT_FILENO, 1, frame, &l);
+	if (fr < 0) {
+		perror(ARGV0": stdout");
 		exit(1);
 	}
 }
