@@ -7,7 +7,7 @@ TESTS = \
 	data-sandwich \
 	data-rainbow \
 	hole-rainbow
-OBJ = hashole
+OBJ = hashole sparse-hexdump
 CMD_TRACE =
 ifeq ($(OS),Windows_NT)
 	OBJ += lshole.exe hashole.exe
@@ -59,13 +59,44 @@ test-freebsd-ufs-phantom-data-at-eof: $(OBJ)
 	truncate -s 4M phantom-data
 	$(CMD_TRACE) ./lshole phantom-data 2>&1 | grep -E '^(lseek|phantom-data:)'
 
+test-sparse-hexdump: $(OBJ) $(TESTS)
+	./sparse-hexdump < empty             | sha256sum -b
+	cat empty         | ./sparse-hexdump | sha256sum -b
+	./sparse-hexdump < whole             | sha256sum -b
+	cat whole         | ./sparse-hexdump | sha256sum -b
+	./sparse-hexdump < datahole          | sha256sum -b
+	cat datahole      | ./sparse-hexdump | sha256sum -b
+	./sparse-hexdump < holedata          | sha256sum -b
+	cat holedata      | ./sparse-hexdump | sha256sum -b
+	./sparse-hexdump < hole-sandwich     | sha256sum -b
+	cat hole-sandwich | ./sparse-hexdump | sha256sum -b
+	./sparse-hexdump < data-sandwich     | sha256sum -b
+	cat data-sandwich | ./sparse-hexdump | sha256sum -b
+	./sparse-hexdump < data-rainbow      | sha256sum -b
+	cat data-rainbow  | ./sparse-hexdump | sha256sum -b
+	./sparse-hexdump < hole-rainbow      | sha256sum -b
+	cat hole-rainbow  | ./sparse-hexdump | sha256sum -b
+
+big-sandwich:
+	truncate -s 0 $@.tmp && [ -e $@.tmp ]
+	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=128 seek=0
+	dd status=none conv=notrunc bs=1M if=/dev/urandom of=$@.tmp count=128 seek=256
+	fallocate -d $@.tmp 2> /dev/null || true
+	mv -f $@.tmp $@
+
+benchmark-sparse-hexdump: $(OBJ) $(TESTS) big-sandwich
+	/bin/time -v ./sparse-hexdump < big-sandwich     > /dev/null
+	cat big-sandwich | /bin/time -v ./sparse-hexdump > /dev/null
+
 test_files: $(TESTS)
 
 clean:
-	rm -f $(OBJ) $(TESTS)
+	rm -f $(OBJ) $(TESTS) big-sandwich
 
 lshole: lshole.c
 	cc -std=c11 -Wall -Wextra -g -O2 -o lshole lshole.c
+sparse-hexdump: sparse-hexdump.c
+	cc -std=c11 -Wall -Wextra -g -O2 -o sparse-hexdump sparse-hexdump.c
 lshole.exe: lshole.c
 	i686-w64-mingw32-gcc -std=c11 -Wall -Wextra -g -O2 -mcrtdll=crtdll -o lshole lshole.c
 hashole:
