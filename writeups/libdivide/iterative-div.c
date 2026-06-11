@@ -142,7 +142,7 @@ static __attribute__((noinline)) int do_full_io(const int fd, const int what, vo
 	return 1;
 }
 
-static void do_average_frame(void)
+static __attribute__((noinline)) void do_average_frame(void)
 {
 	const bool ovf = __builtin_add_overflow(acc_cnt, 1, &acc_cnt);
 
