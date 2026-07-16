@@ -8,14 +8,17 @@ jobs:
       fail-fast: false
       matrix:
         run:
-          - cd writeups/zm           && make clean test
-          - cd writeups/lseek        && make clean test
-          - cd writeups/inet-pnp     && make clean test
-          - cd writeups/ipv6/eyeball && make clean test
-          - cd writeups/libdivide    && make clean benchmark
+          - cd writeups/zm            && make clean test
+          - cd writeups/lseek         && make clean test
+          - cd writeups/inet-pnp      && make clean test
+          - cd writeups/ipv6/eyeball  && make clean test
+          - cd writeups/libdivide     && make clean benchmark
+          - cd writeups/handle-sigbus && make clean test-truncate
         runner: [windows-latest, ubuntu-latest, macos-latest]
         exclude:
-          - run: cd writeups/libdivide    && make clean benchmark
+          - run: cd writeups/libdivide     && make clean benchmark
+            runner: windows-latest
+          - run: cd writeups/handle-sigbus && make clean test-truncate
             runner: windows-latest
     runs-on: ${{ matrix.runner }}
     steps:
@@ -27,10 +30,11 @@ jobs:
       fail-fast: false
       matrix:
         run:
-          - cd writeups/zm           && gmake clean test
-          - cd writeups/lseek        && gmake clean test
-          - cd writeups/inet-pnp     && gmake clean test
-          - cd writeups/ipv6/eyeball && gmake clean test
+          - cd writeups/zm            && gmake clean test
+          - cd writeups/lseek         && gmake clean test
+          - cd writeups/inet-pnp      && gmake clean test
+          - cd writeups/ipv6/eyeball  && gmake clean test
+          - cd writeups/handle-sigbus && gmake clean test-truncate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
