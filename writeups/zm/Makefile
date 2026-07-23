@@ -12,10 +12,12 @@ SIZE_HUGE = 137438953472 # 128GB
 SIZE_REASONABLE = 1073741824 # 1GB
 
 test: $(EXEC)$(EXEC_SUFFIX)
-	time ./$(EXEC)$(EXEC_SUFFIX) -c -s $(SIZE_REASONABLE) || true
-	time ./$(EXEC)$(EXEC_SUFFIX) -c -s $(SIZE_HUGE)       || true
-	time ./$(EXEC)$(EXEC_SUFFIX) -m -s $(SIZE_REASONABLE) || true
-	time ./$(EXEC)$(EXEC_SUFFIX) -m -s $(SIZE_HUGE)       || true
+	time ./$(EXEC)$(EXEC_SUFFIX) -c -s  $(SIZE_REASONABLE) || true
+	time ./$(EXEC)$(EXEC_SUFFIX) -c -s  $(SIZE_HUGE)       || true
+	time ./$(EXEC)$(EXEC_SUFFIX) -m -s  $(SIZE_REASONABLE) || true
+	time ./$(EXEC)$(EXEC_SUFFIX) -m -s  $(SIZE_HUGE)       || true
+	time ./$(EXEC)$(EXEC_SUFFIX) -mp -s $(SIZE_REASONABLE) || true
+	time ./$(EXEC)$(EXEC_SUFFIX) -mp -s $(SIZE_HUGE)       || true
 
 $(EXEC)$(EXEC_SUFFIX): $(EXEC).c
 	$(CC) -Wall -Wextra -std=c17 -O0 -g -o $(EXEC)$(EXEC_SUFFIX) $(EXEC).c $(LD_ADD)

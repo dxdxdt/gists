@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <stdbool.h>
 #include <string.h>
 #include <signal.h>
 #include <assert.h>
@@ -49,7 +50,7 @@ static void do_memcmp (const size_t pagesize, const uint8_t *m) {
 	}
 }
 
-static void with_zm (const size_t pagesize) {
+static void with_zm (const size_t pagesize, const bool private) {
 	static const char *DEV_ZERO = "/dev/zero";
 	uint8_t *m = NULL;
 	int fd;
@@ -61,11 +62,30 @@ static void with_zm (const size_t pagesize) {
 	}
 
 #ifdef _POSIX_MAPPED_FILES
+	int prot = private ? PROT_READ|PROT_WRITE : PROT_READ;
+	int flags = private ? MAP_PRIVATE : MAP_SHARED;
 	/*
 	 * Note to my future self: MAP_SHARED|MAP_ANON doesn't work. There's no
 	 * way of getting rid of /dev/zero here. Period.
 	 */
-	m = mmap(NULL, (size_t)size, PROT_READ, MAP_SHARED, fd, 0);
+
+	if (private) {
+		int err = 0;
+
+#if !defined(MAP_NORESERVE)
+		err = ENOSYS;
+#elif defined(__sun)
+		err = EPERM;
+#else
+		flags |= MAP_NORESERVE;
+#endif
+		if (err != 0) {
+			fprintf(stderr, "-p: %s\n", strerror(err));
+			exit(1);
+		}
+	}
+
+	m = mmap(NULL, (size_t)size, prot, flags, fd, 0);
 	assert(m != NULL);
 	if (m == MAP_FAILED) {
 		m = NULL;
@@ -111,12 +131,13 @@ int main (const int argc, const char **argv) {
 		4096;
 #endif
 	unsigned int mode = 0;
+	bool private = false;
 	int ret;
 
 	assert(pagesize > 0);
 
 	for (;;) {
-		ret = getopt(argc, (char *const *)argv, "s:mc");
+		ret = getopt(argc, (char *const *)argv, "s:mcp");
 
 		switch (ret) {
 		case 's':
@@ -142,6 +163,9 @@ parse_fail:
 		case 'c':
 			mode |= 2;
 			break;
+		case 'p':
+			private = true;
+			break;
 		case -1:
 			goto opts_out;
 		default:
@@ -165,7 +189,7 @@ opts_out:
 
 	switch (mode) {
 	case 1:
-		with_zm(pagesize);
+		with_zm(pagesize, private);
 		break;
 	case 2:
 		with_calloc(pagesize);
