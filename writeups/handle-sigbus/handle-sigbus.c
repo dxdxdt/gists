@@ -86,7 +86,11 @@ static void handler(int signo, siginfo_t *info, void *context)
 	uintptr_t a, b, c;
 
 	(void)context;
-	assert(signo == SIGBUS);
+	if (signo != SIGBUS)
+		/*
+		 * Can't use assert() in a signal handler because it expands to use of fprintf().
+		 */
+		abort();
 
 	/* Is the address known? */
 	a = (uintptr_t)g.addr;
