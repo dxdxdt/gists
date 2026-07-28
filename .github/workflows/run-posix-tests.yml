@@ -27,6 +27,7 @@ jobs:
         run:
           - cd writeups/libdivide     && make clean benchmark
           - cd writeups/handle-sigbus && make clean test-truncate
+          - cd writeups/mmap-magic    && make clean test
         runner: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.runner }}
     steps:
@@ -44,6 +45,7 @@ jobs:
           - cd writeups/inet-pnp      && gmake clean test
           - cd writeups/ipv6/eyeball  && gmake clean test
           - cd writeups/handle-sigbus && gmake clean test-truncate
+          - cd writeups/mmap-magic    && gmake clean test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
