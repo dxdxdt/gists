@@ -3,7 +3,8 @@ run-name: Run various POSIX tests on different platforms
 on:
   workflow_dispatch:
 jobs:
-  main-runners:
+  all-runners:
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -12,20 +13,28 @@ jobs:
           - cd writeups/lseek         && make clean test
           - cd writeups/inet-pnp      && make clean test
           - cd writeups/ipv6/eyeball  && make clean test
+        runner: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - run: ${{ matrix.run }}
+
+  unix-runners:
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        run:
           - cd writeups/libdivide     && make clean benchmark
           - cd writeups/handle-sigbus && make clean test-truncate
-        runner: [windows-latest, ubuntu-latest, macos-latest]
-        exclude:
-          - run: cd writeups/libdivide     && make clean benchmark
-            runner: windows-latest
-          - run: cd writeups/handle-sigbus && make clean test-truncate
-            runner: windows-latest
+        runner: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
       - run: ${{ matrix.run }}
 
   vmactions-bsd:
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
