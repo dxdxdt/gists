@@ -32,10 +32,12 @@
 #include <string.h>
 #include <signal.h>
 #include <errno.h>
+#include <assert.h>
 
 #include <getopt.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 
 #define ARGV0 "mmap-buffer-test"
 
@@ -67,7 +69,7 @@ static void parse_opts(int argc, char *argv[])
 			param.wrap = true;
 			break;
 		case 'm':
-			param.memfile_flags |= MEMFILE_SHM_ONLY;
+			param.memfile_flags |= MEMFILE_BACKING_SHM;
 			break;
 		case 'S':
 			param.stop = true;
@@ -106,9 +108,13 @@ int main(int argc, char *argv[])
 	int ret = 0;
 	const char *errmsg = NULL;
 	size_t size, len, cnt;
-	void *addr = MAP_FAILED;
+	void *addr = NULL;
 	pagedata_t *arr;
 	int fd;
+	int out_flags;
+	int saved_errno;
+	char flags_str[256];
+	struct stat st;
 
 	parse_opts(argc, argv);
 
@@ -117,14 +123,17 @@ int main(int argc, char *argv[])
 		exit(0);
 	}
 
-	fd = mkmemfile(param.memfile_flags);
+	out_flags = param.memfile_flags;
+	fd = mkmemfile(&out_flags);
 	if (fd < 0) {
 		errmsg = "mkmemfile()";
 		goto err;
 	}
+	fprintf(stderr, "backing: %s\n", memfile_backing_name(out_flags));
 
-	addr = mmemfile(fd, 0, param.size, &size, &len);
-	if (addr == MAP_FAILED) {
+	addr = mmemfile(fd, 0, param.size, &len, &size, &out_flags);
+	saved_errno = errno;
+	if (addr == NULL) {
 		errmsg = "mmemfile()";
 		goto err;
 	}
@@ -133,6 +142,16 @@ int main(int argc, char *argv[])
 
 	for (size_t i = 0; i < cnt; i++)
 		arr[i] = charn(i);
+
+	st.st_blocks = -1;
+	fstat(fd, &st);
+	flags_str[0] = 0;
+	memfile_flags_name(out_flags, sizeof(flags_str), flags_str);
+	fprintf(stderr, "flags: %lld %s\n", (long long)st.st_blocks, flags_str);
+	if (!(out_flags & MEMFILE_NO_INHERIT))
+		fprintf(stderr, ARGV0 ": inherit: %s\n", strerror(saved_errno));
+
+	assert(memcmp(addr, (void*)((uintptr_t)addr + len), len) == 0);
 
 	if (param.wrap) {
 		const void *wofs = (const void*)((uintptr_t)addr + len / 2);
@@ -148,15 +167,17 @@ int main(int argc, char *argv[])
 		write(STDOUT_FILENO, addr, wlen);
 	}
 
-	if (param.stop)
+	if (param.stop) {
+		fprintf(stderr, "Stopping (PID: %d)\n ...", (int)getpid());
 		raise(SIGSTOP);
+	}
 
 	goto out;
 err:
 	fprintf(stderr, ARGV0": %s: %s\n", errmsg, strerror(errno));
 	ret = 1;
 out:
-	if (addr != MAP_FAILED)
+	if (addr != NULL)
 		munmap(addr, size);
 	if (fd >= 0)
 		close(fd);

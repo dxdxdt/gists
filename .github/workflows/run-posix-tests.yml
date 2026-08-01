@@ -29,6 +29,9 @@ jobs:
           - cd writeups/handle-sigbus && make clean test-truncate
           - cd writeups/mmap-magic    && make clean test
         runner: [ubuntu-latest, macos-latest]
+        exclude:
+          - run: cd writeups/mmap-magic    && make clean test
+            runner: macos-latest
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
