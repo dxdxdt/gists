@@ -1,5 +1,5 @@
 CC ?= cc
-OBJS = mmagic.o mmap-*-test a b
+OBJS = mmagic.o mmap-*-test mmap-stack a b
 CFLAGS = \
 	-std=c11 -Wall -Wextra -Wno-unused-parameter -Wno-unused-result \
 	-march=native -mtune=native -O2 -g \
@@ -30,6 +30,9 @@ mmap-alias-test: mmap-alias-test.c mmagic.o
 mmap-arena-test: mmap-arena-test.c mmagic.o
 	$(CC_CMD) $(LDADD) mmap-arena-test.c mmagic.o -o mmap-arena-test || \
 		$(CC_CMD) $(LDADD_NETBSD) mmap-arena-test.c mmagic.o -o mmap-arena-test
+
+mmap-stack: mmap-stack.c
+	$(CC_CMD) -o mmap-stack mmap-stack.c
 
 a: mmap-buffer-test
 	./mmap-buffer-test > a.tmp
