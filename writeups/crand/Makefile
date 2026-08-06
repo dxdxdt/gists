@@ -1,3 +1,10 @@
+OBJS = fmemmem randrb randfs *.exe
+
+.PHONY: clean
+
+clean:
+	rm -f $(OBJS)
+
 fmemmem: ../../fmemmem/fmemmem.c
 	clang -std=c11 -Wall -Wextra -g -O3 -o fmemmem ../../fmemmem/fmemmem.c
 randrb: randrb.c
