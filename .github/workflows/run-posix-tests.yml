@@ -4,7 +4,6 @@ on:
   workflow_dispatch:
 jobs:
   all-runners:
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -20,7 +19,6 @@ jobs:
       - run: ${{ matrix.run }}
 
   unix-runners:
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -39,7 +37,6 @@ jobs:
       - run: ${{ matrix.run }}
 
   vmactions-bsd:
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
