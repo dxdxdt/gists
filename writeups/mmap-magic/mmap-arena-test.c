@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
 	e->flags = 0;
 	mmem_arena_rm(&arena, e->m, &e->flags);
 	if (!(e->flags & MEMFILE_DEALLOC))
-		perror("MEMFILE_DEALLOC");
+		perror("MEMFILE_DEALLOC tetris");
 	getfilesize(arena.fd, NULL, fsize + 1);
 	assert(arena.cnt == 2);
 	check_bytes(extents[0].m, extents[0].len, 0x0A);
@@ -104,6 +104,8 @@ int main(int argc, char *argv[])
 	 * decision, not a quirk.
 	 *
 	 * Link: https://reviews.freebsd.org/D37097
+	 *
+	 * In NetBSD, this is always zero if the backing file is memfd.
 	 */
 	fprintf(stderr, "rm: %lld -> %lld %s\n", (long long)fsize[0], (long long)fsize[1],
 			flags_str);
@@ -136,6 +138,8 @@ int main(int argc, char *argv[])
 	assert(fsize[0] > fsize[1]);
 	assert(fsize[1] == 0);
 
+	/* Grow and remove forwards */
+
 	sum = 0;
 	for (int i = 0, bval = 0xA0; i < 3; i++, bval++) {
 		e = extents + i;
@@ -165,6 +169,25 @@ int main(int argc, char *argv[])
 	getfilesize(arena.fd, fsize + 1, NULL);
 	assert(arena.cnt == 0 && LIST_EMPTY(&arena.head));
 	assert(fsize[1] == 0);
+
+	/* Grow forward, and remove backwards */
+
+	for (int i = 0; i < 3; i++) {
+		e = extents + i;
+
+		e->flags = 0;
+		e->m = mmem_arena_req(&arena, 1, &e->len, &e->size, &e->flags);
+		myassert(e->m != NULL);
+	}
+
+	for (int i = 2; i >= 0; i--) {
+		e = extents + i;
+		bret = mmem_arena_rm(&arena, e->m, &e->flags);
+		assert(bret);
+
+		if (!(e->flags & MEMFILE_DEALLOC))
+			perror("MEMFILE_DEALLOC backwards");
+	}
 
 	mmem_arena_close(&arena, true);
 	return 0;

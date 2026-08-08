@@ -219,6 +219,7 @@ void *mmemfile_aligned(int fd, off_t ofs, size_t len, int *in_flags)
 	int prot, flags;
 	size_t size;
 	off_t flen;
+	bool grown;
 
 	cache_pagesize();
 
@@ -230,7 +231,19 @@ void *mmemfile_aligned(int fd, off_t ofs, size_t len, int *in_flags)
 		return NULL;
 
 	size = len * 2;
-	ofs += len;
+	/*
+	 * Cater to tantrums of NetBSD and macos:
+	 *
+	 * memfd_create() appeared in NetBSD 11. However, its implementation(
+	 * memfd_mmap() in sys/kern/sys_memfd.c), the size of the file is
+	 * checked to ensure that the region being mmap()'d exists. If not, it
+	 * fails with EINVAL. This is undocumented behaviour.
+	 *
+	 * It is noted that XNU kernel exhibits the same behaviour during the
+	 * early stages of development albeit the support has been dropped due
+	 * to other various reasons.
+	 */
+	ofs += size;
 	/*
 	 * Well, the C standard says the wrap of signed integers is undefined
 	 * behaviour, but that's because it has to support non-2's complement
@@ -246,12 +259,13 @@ void *mmemfile_aligned(int fd, off_t ofs, size_t len, int *in_flags)
 	if (flen < 0)
 		return NULL;
 
-	if (flen < ofs) {
+	grown = flen < ofs;
+	if (grown) {
 		err = ftruncate(fd, ofs);
 		if (err)
 			return NULL;
 	}
-	ofs -= len;
+	ofs -= size;
 
 	prot = PROT_READ|PROT_WRITE;
 	flags = MAP_SHARED;
@@ -266,8 +280,12 @@ void *mmemfile_aligned(int fd, off_t ofs, size_t len, int *in_flags)
 	b = mmap((void*)second, len, prot, flags, fd, ofs);
 	if (b == MAP_FAILED) {
 		munmap(a, size);
+		if (grown)
+			ftruncate(fd, flen);
 		return NULL;
 	}
+	if (grown)
+		ftruncate(fd, ofs + len);
 
 	/* Guard against accidental use after fork() */
 	if (do_clear_inherit(a, size))
