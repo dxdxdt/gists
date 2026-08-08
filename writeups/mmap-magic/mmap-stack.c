@@ -179,6 +179,7 @@ int main(int argc, char *argv[])
 	struct args a = {0};
 	pthread_attr_t th_attr;
 	pthread_t th;
+	int err;
 
 	for (;;) {
 		const int c = getopt(argc, (char * const*)argv, "tS");
@@ -209,7 +210,13 @@ opt_done:
 		fprintf(stderr, "pthread_attr_getstacksize(): %zu\n", stack_len);
 		alt_stack_size = PTHREAD_STACK_MIN;
 		alt_stack = NULL;
-		posix_memalign(&alt_stack, alt_stack_size, pagesize);
+		err = posix_memalign(&alt_stack, alt_stack_size, pagesize);
+		/*
+		 * POSIX says nothing about posix_memalign() setting errno
+		 * although implementations may set it nontheless.
+		 */
+		if (err)
+			errno = err;
 		stack_addr = alloc_stack(&stack_len);
 		if (alt_stack == NULL || stack_addr == NULL) {
 			perror(NULL);
@@ -224,7 +231,9 @@ opt_done:
 	}
 	fprintf(stderr, "PID: %d\n", (int)getpid());
 
-	if (pthread_create(&th, &th_attr, th_run, &a)) {
+	err = pthread_create(&th, &th_attr, th_run, &a);
+	if (err) {
+		errno = err;
 		perror("pthread_create()");
 		exit(1);
 	}
