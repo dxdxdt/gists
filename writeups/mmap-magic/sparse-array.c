@@ -1,4 +1,8 @@
 #include "mmagic.h"
+#ifdef __sun /* Solaris */
+/* getopt() */
+#define _XOPEN_SOURCE 500
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
