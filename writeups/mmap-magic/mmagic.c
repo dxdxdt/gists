@@ -36,7 +36,7 @@ static inline bool aligned_val(size_t x, size_t alignment)
 	return (x & alignment) == 0;
 }
 
-static inline size_t align_up(size_t x, size_t alignment, bool *out_ovf)
+static inline size_t align_up(size_t x, const size_t alignment, bool *out_ovf)
 {
 	size_t ret;
 	bool ovf = false;
@@ -44,9 +44,9 @@ static inline size_t align_up(size_t x, size_t alignment, bool *out_ovf)
 	if (aligned_val(x, alignment))
 		ret = x;
 	else {
-		ret = x + alignment;
+		ret = (x & ~(alignment - 1));
+		ret += alignment;
 		ovf = ret < x;
-		ret = (ret & ~(alignment - 1));
 	}
 
 	if (out_ovf != NULL)
@@ -361,7 +361,7 @@ void *mmem_arena_req(struct mmem_arena *a, size_t req, size_t *out_len,
 	cache_pagesize();
 	len = align_up(req, pagesize, &ovf);
 	if (ovf || a->cnt == UINT_MAX) {
-		errno = EOVERFLOW;
+		errno = ENOMEM;
 		return NULL;
 	}
 
@@ -383,11 +383,6 @@ void *mmem_arena_req(struct mmem_arena *a, size_t req, size_t *out_len,
 	if (cur == NULL && last != NULL)
 		/* No gap found but there's at least one entry */
 		t_ofs = last->ofs + last->size;
-
-	if (t_ofs < 0) {
-		errno = EOVERFLOW;
-		goto bail;
-	}
 
 	newm->m = mmemfile_aligned(a->fd, t_ofs, len, flags);
 	if (newm->m == NULL)
@@ -419,7 +414,7 @@ bail:
 extern int fdiscard(int fd, off_t pos, off_t length) __attribute__((weak));
 #endif
 
-static inline int dealloc_file_range(int fd, off_t ofs, off_t len)
+int dealloc_file_range(int fd, off_t ofs, off_t len)
 {
 	int ret = -1;
 

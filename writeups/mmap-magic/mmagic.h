@@ -24,7 +24,6 @@
 #define MMAGIC_H
 #ifdef __linux__
 /* glibc can shut the fuck up */
-#undef _BSD_SOURCE
 #define _GNU_SOURCE
 #else
 #define _BSD_SOURCE
@@ -80,5 +79,6 @@ bool mmem_arena_rm(struct mmem_arena *a, void *m, int *flags);
 /* misc. */
 const char *memfile_backing_name(const int type);
 int memfile_flags_name(const int flags, const size_t len, char *out);
+int dealloc_file_range(int fd, off_t ofs, off_t len);
 
 #endif
