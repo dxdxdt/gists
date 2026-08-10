@@ -21,6 +21,11 @@
 
 static long pagesize = -1;
 
+#ifdef __NetBSD__
+extern int fdiscard(int fd, off_t pos, off_t length) __attribute__((weak));
+#endif
+extern int posix_fallocate(int fd, off_t pos, off_t length) __attribute__((weak));
+
 static inline void cache_pagesize(void)
 {
 	if (pagesize > 0)
@@ -210,10 +215,50 @@ static inline bool do_clear_inherit(void *addr, size_t size)
 	return ret;
 }
 
+/*
+ * Basically a knock-off implementation of posix_fallocate(), with the
+ * assumption that the block size is the system memory page size.
+ */
+static inline bool do_prefault_fallback(int fd, off_t ofs, off_t len)
+{
+	ssize_t err;
+
+	assert(pagesize > 0);
+
+	while (len > 0) {
+		err = pwrite(fd, "", 1, ofs);
+		assert(err != 0);
+		if (err < 0)
+			return false;
+
+		ofs += pagesize;
+		len -= pagesize;
+	}
+
+	return true;
+}
+
+static inline bool do_prefault(int fd, off_t ofs, off_t len)
+{
+	/*
+	 * If the platform provides an efficient allocation scheme, try to use
+	 * that.
+	 */
+	if (posix_fallocate != NULL && posix_fallocate(fd, ofs, len) == 0)
+		return true;
+	/*
+	 * By the book, posix_fallocate() can fail with EINTR, but the modern
+	 * implementations do SA_RESTART on regular files. On a strange platform
+	 * where posix_fallocate() can indeed fail with EINTR, the second line
+	 * of defence is the following fallback. (basically, we're calling
+	 * posix_fallocate() twice)
+	 */
+	return do_prefault_fallback(fd, ofs, len);
+}
+
 void *mmemfile_aligned(int fd, off_t ofs, size_t len, int *in_flags)
 {
 	int out_flags = in_flags == NULL ? 0 : *in_flags;
-	int err;
 	void *a, *b;
 	uintptr_t second;
 	int prot, flags;
@@ -261,11 +306,16 @@ void *mmemfile_aligned(int fd, off_t ofs, size_t len, int *in_flags)
 
 	grown = flen < ofs;
 	if (grown) {
-		err = ftruncate(fd, ofs);
-		if (err)
+		if (ftruncate(fd, ofs))
 			return NULL;
 	}
 	ofs -= size;
+
+	if (!do_prefault(fd, ofs, len)) {
+		if (grown)
+			ftruncate(fd, flen);
+		return NULL;
+	}
 
 	prot = PROT_READ|PROT_WRITE;
 	flags = MAP_SHARED;
