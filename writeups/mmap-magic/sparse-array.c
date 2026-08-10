@@ -529,6 +529,11 @@ static bool dump_callback(void *start, size_t len, void *uctx)
 	return true;
 }
 
+static bool istermout(void)
+{
+	return isatty(STDOUT_FILENO) && isatty(STDERR_FILENO);
+}
+
 int main(int argc, char *argv[])
 {
 	int saved_errno;
@@ -561,7 +566,7 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	if (isatty(STDOUT_FILENO) && isatty(STDERR_FILENO))
+	if (istermout())
 		fprintf(stderr, ARGV0 ": %zu bytes of VSZ ready\n", size);
 
 	for (;; lineidx++) {
@@ -572,6 +577,10 @@ int main(int argc, char *argv[])
 			goto it_err;
 		}
 
+		if (istermout()) {
+			fprintf(stderr, "> ");
+			fflush(stderr);
+		}
 		if (fgets(linebuf, sizeof(linebuf), stdin) == NULL)
 			goto loop_out;
 		linelen = strlen(linebuf);
@@ -638,10 +647,10 @@ do_dump:
 it_err:
 		dirty.err = true;
 		saved_errno = errno;
-		if (err_at >= 0 && isatty(STDOUT_FILENO) && isatty(STDERR_FILENO)) {
+		if (err_at >= 0 && istermout()) {
 			for (size_t i = 0; i < (size_t)err_at; i++)
 				fprintf(stderr, " ");
-			fprintf(stderr, "^\n");
+			fprintf(stderr, "  ^\n");
 		}
 		fprintf(stderr, ARGV0 ": line %zu: %s\n", lineidx, strerror(saved_errno));
 
