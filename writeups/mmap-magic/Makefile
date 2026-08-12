@@ -1,5 +1,5 @@
 CC ?= cc
-OBJS = mmagic.o mmap-*-test mmap-stack sparse-array a b
+OBJS = mmagic.o mmap-*-test mmap-stack sparse-array tcp-echo-server a b
 CFLAGS = \
 	-std=c11 -Wall -Wextra -Wno-unused-parameter -Wno-unused-result \
 	-march=native -mtune=native -O2 -g \
@@ -36,6 +36,9 @@ mmap-stack: mmap-stack.c
 sparse-array: mmagic.o sparse-array.c
 	$(CC_CMD) $(LDADD) sparse-array.c mmagic.o -o sparse-array || \
 		$(CC_CMD) $(LDADD_NETBSD) sparse-array.c mmagic.o -o sparse-array
+tcp-echo-server: mmagic.o tcp-echo-server.c
+	$(CC_CMD) $(LDADD) tcp-echo-server.c mmagic.o -o tcp-echo-server || \
+		$(CC_CMD) $(LDADD_NETBSD) tcp-echo-server.c mmagic.o -o tcp-echo-server
 
 a: mmap-buffer-test
 	./mmap-buffer-test > a.tmp
