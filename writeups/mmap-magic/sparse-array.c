@@ -1,5 +1,5 @@
 #include "mmagic.h"
-#ifdef __sun /* Solaris */
+#if defined(__sun) && !defined(_XOPEN_SOURCE) /* Solaris */
 /* getopt() */
 #define _XOPEN_SOURCE 500
 #endif
