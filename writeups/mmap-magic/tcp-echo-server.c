@@ -147,12 +147,12 @@ static struct {
 	/*
 	 * The client list in the LRU order
 	 *
-	 * The client that has done I/O most recently on appears first.
+	 * The client that has done I/O most recently appears first.
 	 *
 	 * When an element gets added/removed/operated, it will be moved to the
-	 * start of the list. When handling connection timeout, keep removing
-	 * the last element until the last element is the one that hasn't timed
-	 * out.
+	 * start of the list. When handling connection timeout in
+	 * cull_timedout(), keep removing the last element until the last
+	 * element is the one that hasn't timed out.
 	 */
 	struct {
 		struct client_entry_head head;
@@ -427,6 +427,7 @@ static bool serve_client(void *ctx_in, int trig, int *out);
 static struct client_ctx *add_conn_ctx(const int fd)
 {
 	struct client_ctx *ret;
+	int req_flags = 0;
 
 	if (server.clist.cnt >= param.maxconn) {
 		errno = EUSERS;
@@ -436,7 +437,10 @@ static struct client_ctx *add_conn_ctx(const int fd)
 	ret = calloc(1, sizeof(*ret));
 	if (ret == NULL)
 		return NULL;
-	ret->buf.m = mmem_arena_req(&server.arena, param.bufsize, &ret->buf.size, NULL, NULL);
+	if (param.nocirc)
+		req_flags |= MEMFILE_WRAPGUARD;
+	ret->buf.m = mmem_arena_req(&server.arena, param.bufsize,
+			&ret->buf.size, NULL, &req_flags);
 	if (ret->buf.m == NULL)
 		goto err;
 

@@ -14,6 +14,9 @@ test: mmap-alias-test mmap-arena-test a b
 	diff a b
 	./mmap-alias-test
 	./mmap-arena-test
+	# memdev and vfs may behave differently (actually observed w/ Linux)
+	! ./mmap-buffer-test -Fw > /dev/null
+	! ./mmap-buffer-test -Fw > wrapguard-Fw.tmp
 
 clean:
 	rm -f $(OBJS) *.tmp

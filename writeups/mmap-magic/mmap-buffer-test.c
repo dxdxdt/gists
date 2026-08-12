@@ -56,7 +56,7 @@ typedef char pagedata_t;
 static void parse_opts(int argc, char *argv[])
 {
 	for (;;) {
-		const int c = getopt(argc, (char *const *)argv, "s:wmSh");
+		const int c = getopt(argc, (char *const *)argv, "s:wmSFh");
 
 		switch (c) {
 		case 's':
@@ -73,6 +73,9 @@ static void parse_opts(int argc, char *argv[])
 			break;
 		case 'S':
 			param.stop = true;
+			break;
+		case 'F':
+			param.memfile_flags |= MEMFILE_WRAPGUARD;
 			break;
 		case 'h':
 			param.help = true;
@@ -108,6 +111,7 @@ int main(int argc, char *argv[])
 	int ret = 0;
 	const char *errmsg = NULL;
 	size_t size, len, cnt;
+	ssize_t rwsize;
 	void *addr = NULL;
 	pagedata_t *arr;
 	int fd;
@@ -119,7 +123,7 @@ int main(int argc, char *argv[])
 	parse_opts(argc, argv);
 
 	if (param.help) {
-		printf("Usage: " ARGV0 " [-s SIZE] [-wmSh]\n");
+		printf("Usage: " ARGV0 " [-h] [-s SIZE] [-wmSF]\n");
 		exit(0);
 	}
 
@@ -151,21 +155,30 @@ int main(int argc, char *argv[])
 	if (!(out_flags & MEMFILE_NO_INHERIT))
 		fprintf(stderr, ARGV0 ": inherit: %s\n", strerror(saved_errno));
 
-	assert(memcmp(addr, (void*)((uintptr_t)addr + len), len) == 0);
-
 	if (param.wrap) {
 		const void *wofs = (const void*)((uintptr_t)addr + len / 2);
 
 		/* The kernel should see the same data */
-		write(STDOUT_FILENO, wofs, len);
+		rwsize = write(STDOUT_FILENO, wofs, len);
+		if (rwsize < 0)
+			goto syserr;
+		assert((size_t)rwsize == len);
 	} else {
 		const void *wofs = (const void*)((uintptr_t)addr + len / 2);
 		const size_t wlen = len / 2;
 
 		/* Traditional buffer wrap around for test control */
-		write(STDOUT_FILENO, wofs, wlen);
-		write(STDOUT_FILENO, addr, wlen);
+		rwsize = write(STDOUT_FILENO, wofs, wlen);
+		if (rwsize < 0)
+			goto syserr;
+		assert((size_t)rwsize == wlen);
+		rwsize = write(STDOUT_FILENO, addr, wlen);
+		if (rwsize < 0)
+			goto syserr;
+		assert((size_t)rwsize == wlen);
 	}
+
+	assert(memcmp(addr, (void*)((uintptr_t)addr + len), len) == 0);
 
 	if (param.stop) {
 		fprintf(stderr, "Stopping (PID: %d)\n ...", (int)getpid());
@@ -182,4 +195,7 @@ out:
 	if (fd >= 0)
 		close(fd);
 	return ret;
+syserr:
+	perror(ARGV0);
+	abort();
 }

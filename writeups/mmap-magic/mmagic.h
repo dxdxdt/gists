@@ -39,6 +39,7 @@
 #define MEMFILE_BACKING_MFD	0x0200
 #define MEMFILE_NO_INHERIT	0x1
 #define MEMFILE_DEALLOC		0x2
+#define MEMFILE_WRAPGUARD	0x4
 
 struct mmem_extent {
 	size_t ofs;

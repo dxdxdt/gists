@@ -325,6 +325,8 @@ void *mmemfile_aligned(int fd, off_t ofs, size_t len, int *in_flags)
 	assert(a != NULL);
 
 	flags = MAP_SHARED|MAP_FIXED;
+	if (out_flags & MEMFILE_WRAPGUARD)
+		prot = PROT_NONE;
 	second = (uintptr_t)a;
 	second += len;
 	b = mmap((void*)second, len, prot, flags, fd, ofs);
@@ -573,7 +575,8 @@ const char *memfile_backing_name(const int type)
 
 int memfile_flags_name(const int flags, const size_t len, char *out)
 {
-	return snprintf(out, len, "%s%s",
+	return snprintf(out, len, "%s%s%s",
 			flags & MEMFILE_NO_INHERIT	? "NO_INHERIT "	: "",
-			flags & MEMFILE_DEALLOC		? "DEALLOC "	: "");
+			flags & MEMFILE_DEALLOC		? "DEALLOC "	: "",
+			flags & MEMFILE_WRAPGUARD	? "WRAPGUARD "	: "");
 }
