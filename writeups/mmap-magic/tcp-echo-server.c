@@ -573,7 +573,7 @@ static bool setup_server_socket(int *gai_err)
 #endif
 
 		if (bind(server.sck[i], selected->ai_addr, selected->ai_addrlen) != 0 ||
-				listen(server.sck[i], 1024) != 0)
+				listen(server.sck[i], param.evtpt) != 0)
 			goto out;
 		setnonblock(server.sck[i], true);
 	}
@@ -703,42 +703,44 @@ static bool serve_incoming(void *ctx_in, int trig, int *out)
 	} s;
 	socklen_t sl = sizeof(s);
 
-	newconn = accept(fd, &s.a, &sl);
-	if (newconn < 0) {
-		saved_errno = errno;
+	for (;;) {
+		newconn = accept(fd, &s.a, &sl);
+		if (newconn < 0) {
+			saved_errno = errno;
 
-		perror(ARGV0 ": accept()");
-
-		switch (saved_errno) {
-		case ENOMEM:
-			server.loop_ctx.breather = true;
-			/* fall-through */
-		case EINTR:
-		case EAGAIN:
+			switch (saved_errno) {
+			case ENOBUFS:
+			case ENOMEM:
+				server.loop_ctx.breather = true;
+				/* fall-through */
+			case EINTR:
+			case EAGAIN:
 #if EAGAIN != EWOULDBLOCK
-		case EWOULDBLOCK:
+			case EWOULDBLOCK:
 #endif
-			break;
-		default:
-			assert(saved_errno == ENOMEM ||
-					saved_errno == EINTR ||
-					saved_errno == EAGAIN ||
-					saved_errno == EWOULDBLOCK);
+				break;
+			default:
+				assert(saved_errno == ENOMEM ||
+						saved_errno == EINTR ||
+						saved_errno == EAGAIN ||
+						saved_errno == EWOULDBLOCK);
+			}
+
+			return true;
 		}
+		mksockaddrstr(&s.a);
 
-		return true;
-	}
-	mksockaddrstr(&s.a);
-
-	c = add_conn_ctx(newconn);
-	if (c == NULL) {
-		if (errno == ENOMEM)
-			server.loop_ctx.breather = true;
-		fprintf(stderr, ARGV0 ": %s: %s\n", server.sa_buf, strerror(errno));
-		close(newconn);
-	} else {
-		fprintf(stderr, ARGV0 ": %s: accepted\n", server.sa_buf);
-		memcpy(&c->s, &s, sl);
+		c = add_conn_ctx(newconn);
+		if (c == NULL) {
+			if (errno == ENOMEM)
+				server.loop_ctx.breather = true;
+			fprintf(stderr, ARGV0 ": %s: %s\n",
+					server.sa_buf, strerror(errno));
+			close(newconn);
+		} else {
+			fprintf(stderr, ARGV0 ": %s: accepted\n", server.sa_buf);
+			memcpy(&c->s, &s, sl);
+		}
 	}
 
 	return true;
