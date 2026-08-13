@@ -21,6 +21,7 @@
 #include <math.h>
 #include <time.h>
 
+#include <sched.h>
 #include <getopt.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -925,12 +926,7 @@ static void server_loop(void)
 
 	do {
 		if (server.loop_ctx.breather) {
-			static const struct timespec yieldtime = { /* 25 ms */
-				.tv_sec = 0,
-				.tv_nsec = 25000000,
-			};
-
-			nanosleep(&yieldtime, NULL);
+			sched_yield();
 			server.loop_ctx.breather = false;
 			server.stat.breather = true;
 		}
