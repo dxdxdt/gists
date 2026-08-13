@@ -77,26 +77,29 @@ enum sig_opcode {
 #define PFD_AF_START		(1)
 #define PFD_TERMPIPE_IDX	(0)
 #define MAX_CONN		(INT_MAX - NB_RSV_FD)
+/* 64KB: highest pagesize (AArch64) */
+#define DEF_BUFSIZE		(64 * 1024)
 
 static struct {
-	size_t bufsize;
 	const char *node;
 	const char *service;
-	unsigned int maxconn;		/* (0, MAX_CONN] */
+	const char *pidfile;
+	size_t bufsize;
 	int af[NB_AF];
-	struct timespec timeout;
+	unsigned int maxconn;		/* (0, MAX_CONN] */
 	int evtpt;			/* events per tick (0, INT_MAX] */
+	struct timespec timeout;
 	bool help:1;
 	bool nocirc:1;
 	bool reuseport:1;
 } param = {
-	.bufsize = 64 * 1024,		/* 64KB: highest pagesize (AArch64) */
 	.node = NULL,
 	.service = "7777",
-	.maxconn = MAX_CONN,
+	.bufsize = DEF_BUFSIZE,
 	.af = { AF_INET, AF_INET6 },
-	.timeout = { .tv_sec = 60, },	/* 1 min */
+	.maxconn = MAX_CONN,
 	.evtpt = 1024,
+	.timeout = { .tv_sec = 60, },	/* 1 min */
 };
 
 struct cbuffer {
@@ -125,10 +128,9 @@ struct evtcb_ctx {
 struct client_ctx {
 	TAILQ_ENTRY(client_ctx) entries;
 	struct cbuffer buf;
-	int fd;
+	struct evtcb_ctx cb;
 	int err;
 	int flags;
-	struct evtcb_ctx cb;
 	union {
 		struct sockaddr a;
 		struct sockaddr_in in;
@@ -162,9 +164,17 @@ static struct {
 	struct mmem_arena arena;
 	struct evtcb_ctx termpipe_cb;
 	int termpipe[2];
-	int sck[2];
 	struct evtcb_ctx sck_cb[2];
 	int evt;
+	struct {
+		int size;
+		int cnt;
+#if defined(__linux__)
+		struct epoll_event *arr;
+#else
+		struct kevent *arr;
+#endif
+	} eobj;
 	struct {
 		struct timespec now;
 		struct timespec ts_wait_timeout;
@@ -184,19 +194,11 @@ static struct {
 		bool wrapped:1;
 		bool breather:1;
 	} stat;
-	struct {
-		int size;
-		int cnt;
-#if defined(__linux__)
-		struct epoll_event *arr;
-#else
-		struct kevent *arr;
-#endif
-	} eobj;
 	_Alignas(64) char sa_buf[INET6_ADDRSTRLEN - 1 + sizeof("[]:65535")];
+	FILE *pidfile;
 } server = {
 	.termpipe = { -1, -1 },
-	.sck = { -1, -1 },
+	.sck_cb = { { .fd = -1 }, { .fd = -1 }, },
 	.evt = -1,
 };
 
@@ -447,7 +449,7 @@ static struct client_ctx *add_conn_ctx(const int fd)
 
 	ret->cb.ctx = ret;
 	ret->cb.callback = serve_client;
-	ret->cb.fd = ret->fd = fd;
+	ret->cb.fd = fd;
 	ret->ts.since = ret->ts.last = server.loop_ctx.now;
 	if (!kevent_register(fd, &ret->cb, KEVENT_REG_IN))
 		goto err;
@@ -494,8 +496,8 @@ static void rm_conn_ctx(struct client_ctx *c)
 	TAILQ_REMOVE(&server.clist.head, c, entries);
 	server.clist.cnt--;
 	mmem_arena_rm(&server.arena, c->buf.m, NULL);
-	kevent_unregister(c->fd);
-	close(c->fd);
+	kevent_unregister(c->cb.fd);
+	close(c->cb.fd);
 
 	free(c);
 }
@@ -552,31 +554,31 @@ static bool setup_server_socket(int *gai_err)
 			continue;
 		tried = true;
 
-		server.sck[i] = socket(selected->ai_family, selected->ai_socktype, selected->ai_protocol);
-		if (server.sck[i] < 0)
+		server.sck_cb[i].fd = socket(selected->ai_family, selected->ai_socktype, selected->ai_protocol);
+		if (server.sck_cb[i].fd < 0)
 			goto out;
 
 #ifdef IPV6_V6ONLY
 		if (selected->ai_family == AF_INET6) {
 			sov = 1;
-			setsockopt(server.sck[i], IPPROTO_IPV6, IPV6_V6ONLY, &sov, sizeof(sov));
+			setsockopt(server.sck_cb[i].fd, IPPROTO_IPV6, IPV6_V6ONLY, &sov, sizeof(sov));
 		}
 #endif
 #ifdef SO_REUSEADDR
 		sov = 1;
-		setsockopt(server.sck[i], SOL_SOCKET, SO_REUSEADDR, &sov, sizeof(sov));
+		setsockopt(server.sck_cb[i].fd, SOL_SOCKET, SO_REUSEADDR, &sov, sizeof(sov));
 #endif
 		sov = param.reuseport;
 #if	defined(SO_REUSEPORT_LB)
-		setsockopt(server.sck[i], SOL_SOCKET, SO_REUSEPORT_LB, &sov, sizeof(sov));
+		setsockopt(server.sck_cb[i].fd, SOL_SOCKET, SO_REUSEPORT_LB, &sov, sizeof(sov));
 #elif	defined(SO_REUSEPORT)
-		setsockopt(server.sck[i], SOL_SOCKET, SO_REUSEPORT, &sov, sizeof(sov));
+		setsockopt(server.sck_cb[i].fd, SOL_SOCKET, SO_REUSEPORT, &sov, sizeof(sov));
 #endif
 
-		if (bind(server.sck[i], selected->ai_addr, selected->ai_addrlen) != 0 ||
-				listen(server.sck[i], param.evtpt) != 0)
+		if (bind(server.sck_cb[i].fd, selected->ai_addr, selected->ai_addrlen) != 0 ||
+				listen(server.sck_cb[i].fd, param.evtpt) != 0)
 			goto out;
-		setnonblock(server.sck[i], true);
+		setnonblock(server.sck_cb[i].fd, true);
 	}
 
 	if (!tried) {
@@ -588,9 +590,9 @@ out:
 	if (ai != NULL)
 		freeaddrinfo(ai);
 	for (size_t i = 0; i < NB_AF; i++) {
-		if (server.sck[i] >= 0) {
-			close(server.sck[i]);
-			server.sck[i] = -1;
+		if (server.sck_cb[i].fd >= 0) {
+			close(server.sck_cb[i].fd);
+			server.sck_cb[i].fd = -1;
 		}
 	}
 
@@ -776,12 +778,17 @@ static ssize_t do_rw_nocirc(int fd, ssize_t (*rw)(int fd, void *buf, size_t len)
 static ssize_t do_rw(int fd, ssize_t (*rw)(int fd, void *buf, size_t len),
 		uint8_t *buf, size_t size, size_t ofs, size_t len)
 {
-	if (param.nocirc)
-		return do_rw_nocirc(fd, rw, buf, size, ofs, len);
+	ssize_t ret;
 
-	if (ofs + len >= size)
-		server.stat.wrapped = true;
-	return rw(fd, buf + ofs, len);
+	if (param.nocirc)
+		ret = do_rw_nocirc(fd, rw, buf, size, ofs, len);
+	else {
+		ret = rw(fd, buf + ofs, len);
+		if (ret > 0 && ofs + (size_t)ret >= size)
+			server.stat.wrapped = true;
+	}
+
+	return ret;
 }
 
 static bool serve_client(void *ctx_in, int trig, int *out)
@@ -798,7 +805,7 @@ static bool serve_client(void *ctx_in, int trig, int *out)
 			/* Don't use mod(%) because division is slow! */
 			ofs -= c->buf.size;
 
-		rwsize = do_rw(c->fd, read, c->buf.m, c->buf.size, ofs, avail);
+		rwsize = do_rw(c->cb.fd, read, c->buf.m, c->buf.size, ofs, avail);
 		if (rwsize == 0)
 			c->flags |= CCTX_FIN;
 		else if (rwsize < 0)
@@ -818,7 +825,7 @@ static bool serve_client(void *ctx_in, int trig, int *out)
 				server.stat.ovf_total_in = true;
 		}
 	} else if (trig == KEVENT_REG_OUT) {
-		rwsize = do_rw(c->fd, (ssize_t(*)(int fd, void *buf, size_t len))write,
+		rwsize = do_rw(c->cb.fd, (ssize_t(*)(int fd, void *buf, size_t len))write,
 				c->buf.m, c->buf.size, c->buf.ofs, c->buf.len);
 		if (rwsize == 0) {
 			errno = EIO;
@@ -965,18 +972,19 @@ static void destroy_all_conn(void)
 
 static void usage(FILE *f, const bool full)
 {
-	fprintf(f, "Usage: " ARGV0 " [-h] [-46Rz] [-s SIZE] [-M MAX] [-T TIMEOUT] [HOST] [PORT]\n");
+	fprintf(f, "Usage: " ARGV0 " [-h] [-46Rz] [-s SIZE] [-M MAX] [-T TIMEOUT] [-p PIDFILE] [HOST] [PORT]\n");
 	if (!full)
 		return;
 	fprintf(f, "Options:\n"
 			"  -h: print this message and exit\n"
-			"  -4: bind to IPv4 only\n"
-			"  -6: bind to IPv6 only\n"
+			"  -4: bind IPv4 only\n"
+			"  -6: bind IPv6 only\n"
 			"  -R: enable SO_REUSEPORT(_LB)\n"
 			"  -z: treat buffer as non-circular\n"
 			"  -s SIZE: desired buffer size\n"
 			"           (actual size is rounded up to system page size)\n"
 			"  -M MAX: max connections\n"
+			"  -p PIDFILE: create a pid file and lock it\n"
 			"  -T TIMEOUT: connection inactivity timeout in seconds\n");
 }
 
@@ -985,7 +993,7 @@ static void parse_opts(int argc, char *argv[])
 	bool noarg = false;
 
 	for (;;) {
-		const int c = getopt(argc, (char *const *)argv, "h46Rzs:M:T:");
+		const int c = getopt(argc, (char *const *)argv, "h46Rzs:M:T:p:");
 		int err;
 		double tmpf;
 
@@ -1010,8 +1018,10 @@ static void parse_opts(int argc, char *argv[])
 		case 's':
 			errno = EINVAL;
 			err = sscanf(optarg, "%zu", &param.bufsize);
-			if (err != 1 || param.bufsize == 0)
+			if (err != 1)
 				goto inval;
+			if (param.bufsize == 0)
+				param.bufsize = DEF_BUFSIZE;
 			break;
 		case 'M':
 			errno = EINVAL;
@@ -1044,6 +1054,9 @@ static void parse_opts(int argc, char *argv[])
 				param.timeout.tv_nsec = (long)(tmpf * 1000000000.0);
 			}
 			break;
+		case 'p':
+			param.pidfile = optarg;
+			break;
 		default:
 			if (c < 0)
 				goto done;
@@ -1074,6 +1087,46 @@ do_exit:
 	exit(2);
 }
 
+static bool do_pidfile(void)
+{
+	FILE *f = NULL;
+	intmax_t theother = 0;
+	int fd = -1;
+
+	assert(server.pidfile == NULL);
+	if (param.pidfile == NULL)
+		return true;
+
+	fd = open(param.pidfile, O_RDWR|O_CREAT, 0644);
+	if (fd < 0)
+		goto syserr;
+	f = fdopen(fd, "r+");
+	if (f == NULL)
+		goto syserr;
+	fd = -1;
+
+	if (lockf(fileno(f), F_TLOCK, 0) != 0) {
+		fscanf(f, "%" PRIdMAX, &theother);
+		fprintf(stderr, ARGV0 ": failed to lock pidfile(held by: %" PRIdMAX ")\n",
+				theother);
+		goto out;
+	}
+	if (fprintf(f, "%" PRIdMAX "\n", (intmax_t)getpid()) < 0 || fflush(f) != 0)
+		goto syserr;
+	server.pidfile = f;
+
+	return true;
+syserr:
+	fprintf(stderr, ARGV0 ": %s: %s\n", param.pidfile, strerror(errno));
+out:
+	if (fd >= 0)
+		close(fd);
+	if (f != NULL)
+		fclose(f);
+
+	return false;
+}
+
 int main(int argc, char *argv[])
 {
 	const char *errmsg;
@@ -1083,7 +1136,8 @@ int main(int argc, char *argv[])
 
 	/* some arch checks */
 	assert(NB_RSV_FD < INT_MAX);
-	assert((int)UINT_MAX == -1); /* processor represents signed integers in 2's complement */
+	/* processor represents signed integers in 2's complement */
+	assert((int)UINT_MAX == -1);
 
 	parse_opts(argc, argv);
 	if (param.help) {
@@ -1094,10 +1148,19 @@ int main(int argc, char *argv[])
 	TAILQ_INIT(&server.clist.head);
 	mmem_arena_init(&server.arena);
 
+	if (!do_pidfile())
+		exit(3);
+
 	if (!mmem_arena_open(&server.arena, NULL)) {
 		errmsg = "mmem_arena_open()";
 		goto err;
 	}
+
+	if (mmemfile_align_size(param.bufsize, &param.bufsize)) {
+		errmsg = "mmemfile_align_size()";
+		goto err;
+	}
+	fprintf(stderr, ARGV0 ": buffer size: %zu\n", param.bufsize);
 
 	if (param.maxconn > UINT_MAX - NB_RSV_FD) {
 		errmsg = "max number of connection";
@@ -1137,6 +1200,9 @@ int main(int argc, char *argv[])
 		errmsg = "setup_server_socket()";
 		goto err;
 	}
+
+	fprintf(stderr, ARGV0 ": PID: %" PRIuMAX "\n", (uintmax_t)getpid());
+
 	for (size_t i = 0; i < NB_AF; i++) {
 		union {
 			struct sockaddr a;
@@ -1145,13 +1211,13 @@ int main(int argc, char *argv[])
 		} s;
 		socklen_t sl = sizeof(s);
 
-		if (server.sck[i] < 0)
+		if (server.sck_cb[i].fd < 0)
 			continue;
 
-		server.sck_cb[i].ctx = &server.sck[i];
+		server.sck_cb[i].ctx = &server.sck_cb[i].fd;
 		server.sck_cb[i].callback = serve_incoming;
-		server.sck_cb[i].fd = server.sck[i];
-		if (!kevent_register(server.sck[i], &server.sck_cb[i], KEVENT_REG_IN)) {
+		server.sck_cb[i].fd = server.sck_cb[i].fd;
+		if (!kevent_register(server.sck_cb[i].fd, &server.sck_cb[i], KEVENT_REG_IN)) {
 			errmsg = "kevent_register()";
 			goto err;
 		}
@@ -1177,12 +1243,14 @@ out:
 	close(server.evt);
 
 	for (size_t i = 0; i < NB_AF; i++)
-		close(server.sck[i]);
+		close(server.sck_cb[i].fd);
 	close(server.termpipe[0]);
 	close(server.termpipe[1]);
 
 	free(server.eobj.arr);
 	mmem_arena_close(&server.arena, true);
 
+	if (server.pidfile != NULL)
+		fclose(server.pidfile);
 	return ret;
 }

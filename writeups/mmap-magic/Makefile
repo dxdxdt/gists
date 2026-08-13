@@ -1,4 +1,10 @@
 CC ?= cc
+RUNTIME ?= 30
+SETTLEDOWN ?= 2
+DATASOURCE ?= /dev/urandom
+BUFSIZE ?= 0
+CKSUM ?= sha256sum
+
 OBJS = mmagic.o mmap-*-test mmap-stack sparse-array tcp-echo-server a b
 CFLAGS = \
 	-std=c11 -Wall -Wextra -Wno-unused-parameter -Wno-unused-result \
@@ -8,7 +14,7 @@ CC_CMD = $(CC) $(CFLAGS)
 LDADD = -lc
 LDADD_NETBSD = -lc -lrt
 
-.PHONY: test clean
+.PHONY: test test-tcp-echo-server clean
 
 test: mmap-alias-test mmap-arena-test a b
 	diff a b
@@ -18,8 +24,28 @@ test: mmap-alias-test mmap-arena-test a b
 	! ./mmap-buffer-test -Fw > /dev/null
 	! ./mmap-buffer-test -Fw > wrapguard-Fw.tmp
 
+test-tcp-echo-server: tcp-echo-server hashfifo.tmp
+	time timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) ./tcp-echo-server -zs "$(BUFSIZE)" \
+		-p "tcp-echo-server.pid" &
+	$(CKSUM) "hashfifo.tmp" | cut -d ' ' -f 1 > "hash-out.tmp" &
+	timeout $(RUNTIME) tee "hashfifo.tmp" < "$(DATASOURCE)" | nc localhost 7777 | \
+		$(CKSUM) | cut -d ' ' -f 1 > "hash-in.tmp"
+	diff "hash-in.tmp" "hash-out.tmp"
+	kill -TERM $$(cat "tcp-echo-server.pid")
+
+	time timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) ./tcp-echo-server -s "$(BUFSIZE)" \
+		-p "tcp-echo-server.pid" &
+	$(CKSUM) "hashfifo.tmp" | cut -d ' ' -f 1 > "hash-out.tmp" &
+	timeout $(RUNTIME) tee "hashfifo.tmp" < "$(DATASOURCE)" | nc localhost 7777 | \
+		$(CKSUM) | cut -d ' ' -f 1 > "hash-in.tmp"
+	diff "hash-in.tmp" "hash-out.tmp"
+	kill -TERM $$(cat "tcp-echo-server.pid")
+
 clean:
-	rm -f $(OBJS) *.tmp
+	rm -f $(OBJS) *.tmp *.pid
+
+hashfifo.tmp:
+	[ -p "$@" ] || mkfifo "$@"
 
 mmagic.o: mmagic.c mmagic.h
 	$(CC_CMD) -c -o mmagic.o mmagic.c
