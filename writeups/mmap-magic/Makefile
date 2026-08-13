@@ -3,7 +3,7 @@ RUNTIME ?= 30
 SETTLEDOWN ?= 2
 DATASOURCE ?= /dev/urandom
 BUFSIZE ?= 0
-CKSUM ?= sha256sum
+CKSUM ?= cksum -a sha256
 NC_OPTS ?=
 
 OBJS = mmagic.o mmap-*-test mmap-stack sparse-array tcp-echo-server a b
@@ -32,10 +32,12 @@ test-tcp-echo-server: tcp-echo-server
 	timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) wc -c < "lenfifo-in.tmp" > "len-in.tmp" &
 	timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) wc -c < "lenfifo-out.tmp" > "len-out.tmp" &
 
-	time timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) ./tcp-echo-server -zs "$(BUFSIZE)" \
-		-p "tcp-echo-server.pid" &
+	./tcp-echo-server -zs "$(BUFSIZE)" \
+		-D -b "tcp-echo-server.bound.tmp" -p "tcp-echo-server.pid" localhost 0
 	timeout $(RUNTIME) cat "$(DATASOURCE)" | tee "hashfifo.tmp" | tee "lenfifo-in.tmp" | \
-		nc $(NC_OPTS) localhost 7777 | tee "lenfifo-out.tmp" | $(CKSUM) > "hash-in.tmp"
+		nc $(NC_OPTS) localhost $$(grep -Eo '[0-9]+$$' "tcp-echo-server.bound.tmp" | head -n1) | \
+		tee "lenfifo-out.tmp" | $(CKSUM) > "hash-in.tmp"
+	sync "hash-in.tmp" "hash-out.tmp"
 	diff "hash-in.tmp" "hash-out.tmp"
 	kill -TERM $$(cat "tcp-echo-server.pid") || true
 	rm -f "tcp-echo-server.pid"
@@ -46,10 +48,12 @@ test-tcp-echo-server: tcp-echo-server
 	timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) wc -c < "lenfifo-in.tmp" > "len-in.tmp" &
 	timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) wc -c < "lenfifo-out.tmp" > "len-out.tmp" &
 
-	time timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) ./tcp-echo-server -s "$(BUFSIZE)" \
-		-p "tcp-echo-server.pid" &
+	./tcp-echo-server -s "$(BUFSIZE)" \
+		-D -b "tcp-echo-server.bound.tmp" -p "tcp-echo-server.pid" localhost 0
 	timeout $(RUNTIME) cat "$(DATASOURCE)" | tee "hashfifo.tmp" | tee "lenfifo-in.tmp" | \
-		nc $(NC_OPTS) localhost 7777 | tee "lenfifo-out.tmp" | $(CKSUM) > "hash-in.tmp"
+		nc $(NC_OPTS) localhost $$(grep -Eo '[0-9]+$$' "tcp-echo-server.bound.tmp" | head -n1) | \
+		tee "lenfifo-out.tmp" | $(CKSUM) > "hash-in.tmp"
+	sync "hash-in.tmp" "hash-out.tmp"
 	diff "hash-in.tmp" "hash-out.tmp"
 	kill -TERM $$(cat "tcp-echo-server.pid") || true
 	rm -f "tcp-echo-server.pid"

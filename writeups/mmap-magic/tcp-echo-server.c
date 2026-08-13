@@ -84,6 +84,7 @@ static struct {
 	const char *node;
 	const char *service;
 	const char *pidfile;
+	const char *bindfile;
 	size_t bufsize;
 	int af[NB_AF];
 	unsigned int maxconn;		/* (0, MAX_CONN] */
@@ -92,6 +93,7 @@ static struct {
 	bool help:1;
 	bool nocirc:1;
 	bool reuseport:1;
+	bool daemonise:1;
 } param = {
 	.node = NULL,
 	.service = "7777",
@@ -638,7 +640,7 @@ static void setup_sighandlers(void)
 
 static void print_stats(void)
 {
-	printf(ARGV0 " stats:\n"
+	printf("stats:\n"
 		"  accepted: %" PRIuMAX " %s\n"
 		"  active: %zu\n"
 		"  timedout: %" PRIuMAX "\n"
@@ -935,6 +937,7 @@ static void server_loop(void)
 
 	do {
 		if (server.loop_ctx.breather) {
+			sleep(0);
 			sched_yield();
 			server.loop_ctx.breather = false;
 			server.stat.breather = true;
@@ -954,6 +957,8 @@ static void server_loop(void)
 			case EINTR:
 				continue;
 			default:
+				errno = saved_errno;
+				perror(ARGV0);
 				assert(saved_errno == EINTR || saved_errno == ENOMEM);
 			}
 		}
@@ -974,7 +979,8 @@ static void destroy_all_conn(void)
 
 static void usage(FILE *f, const bool full)
 {
-	fprintf(f, "Usage: " ARGV0 " [-h] [-46Rz] [-s SIZE] [-M MAX] [-T TIMEOUT] [-p PIDFILE] [HOST] [PORT]\n");
+	fprintf(f, "Usage: " ARGV0 " [-h] [-46RzD] [-s SIZE] [-M MAX] "
+			"[-T TIMEOUT] [-p PIDFILE] [-b BINDFILE] [HOST] [PORT]\n");
 	if (!full)
 		return;
 	fprintf(f, "Options:\n"
@@ -987,7 +993,9 @@ static void usage(FILE *f, const bool full)
 			"           (actual size is rounded up to system page size)\n"
 			"  -M MAX: max connections\n"
 			"  -p PIDFILE: create a pid file and lock it\n"
-			"  -T TIMEOUT: connection inactivity timeout in seconds\n");
+			"  -b BINDFILE: create a bind file\n"
+			"  -T TIMEOUT: connection inactivity timeout in seconds\n"
+			"  -D: run in background\n");
 }
 
 static void parse_opts(int argc, char *argv[])
@@ -995,7 +1003,7 @@ static void parse_opts(int argc, char *argv[])
 	bool noarg = false;
 
 	for (;;) {
-		const int c = getopt(argc, (char *const *)argv, "h46Rzs:M:T:p:");
+		const int c = getopt(argc, (char *const *)argv, "h46RzDs:M:T:p:b:");
 		int err;
 		double tmpf;
 
@@ -1059,6 +1067,12 @@ static void parse_opts(int argc, char *argv[])
 		case 'p':
 			param.pidfile = optarg;
 			break;
+		case 'b':
+			param.bindfile = optarg;
+			break;
+		case 'D':
+			param.daemonise = true;
+			break;
 		default:
 			if (c < 0)
 				goto done;
@@ -1113,8 +1127,6 @@ static bool do_pidfile(void)
 				theother);
 		goto out;
 	}
-	if (fprintf(f, "%" PRIdMAX "\n", (intmax_t)getpid()) < 0 || fflush(f) != 0)
-		goto syserr;
 	server.pidfile = f;
 
 	return true;
@@ -1132,6 +1144,7 @@ out:
 int main(int argc, char *argv[])
 {
 	const char *errmsg;
+	FILE *bindfile = NULL;
 	int ret = 1, gai_err = 0;
 
 	setlocale(LC_ALL, "");
@@ -1149,6 +1162,14 @@ int main(int argc, char *argv[])
 
 	TAILQ_INIT(&server.clist.head);
 	mmem_arena_init(&server.arena);
+
+	if (param.bindfile != NULL) {
+		bindfile = fopen(param.bindfile, "w");
+		if (bindfile == NULL) {
+			fprintf(stderr, ARGV0 ": %s: %s\n", param.bindfile, strerror(errno));
+			exit(1);
+		}
+	}
 
 	if (!do_pidfile())
 		exit(3);
@@ -1178,11 +1199,6 @@ int main(int argc, char *argv[])
 		goto err;
 	}
 
-	if (!setup_kevent()) {
-		errmsg = "setup_kevent()";
-		goto err;
-	}
-
 	if (pipe(server.termpipe) != 0) {
 		errmsg = "pipe()";
 		goto err;
@@ -1191,10 +1207,6 @@ int main(int argc, char *argv[])
 	setnonblock(server.termpipe[1], true);
 	server.termpipe_cb.callback = proc_termpipe;
 	server.termpipe_cb.fd = server.termpipe[0];
-	if (!kevent_register(server.termpipe[0], &server.termpipe_cb, KEVENT_REG_IN)) {
-		errmsg = "kevent_register()";
-		goto err;
-	}
 
 	setup_sighandlers();
 
@@ -1203,8 +1215,7 @@ int main(int argc, char *argv[])
 		goto err;
 	}
 
-	fprintf(stderr, ARGV0 ": PID: %" PRIuMAX "\n", (uintmax_t)getpid());
-
+	printf("bound:\n");
 	for (size_t i = 0; i < NB_AF; i++) {
 		union {
 			struct sockaddr a;
@@ -1219,15 +1230,53 @@ int main(int argc, char *argv[])
 		server.sck_cb[i].ctx = &server.sck_cb[i].fd;
 		server.sck_cb[i].callback = serve_incoming;
 		server.sck_cb[i].fd = server.sck_cb[i].fd;
-		if (!kevent_register(server.sck_cb[i].fd, &server.sck_cb[i], KEVENT_REG_IN)) {
-			errmsg = "kevent_register()";
-			goto err;
-		}
 
 		memset(&s, 0, sizeof(s));
 		getsockname(server.sck_cb[i].fd, &s.a, &sl);
 		mksockaddrstr(&s.a);
-		fprintf(stderr, ARGV0 ": bound to %s\n", server.sa_buf);
+		printf("  - %s\n", server.sa_buf);
+		if (bindfile != NULL)
+			fprintf(bindfile, "%s\n", server.sa_buf);
+	}
+	fflush(stdout);
+	if (bindfile != NULL) {
+		fclose(bindfile);
+		bindfile = NULL;
+	}
+
+	if (param.daemonise) {
+		pid_t c = fork();
+
+		if (c < 0) {
+			errmsg = "1st fork()";
+			goto err;
+		} else if (c > 0)
+			exit(0);
+
+		setsid();
+	}
+
+	if (!setup_kevent()) {
+		errmsg = "setup_kevent()";
+		goto err;
+	}
+	if (!kevent_register(server.termpipe[0], &server.termpipe_cb, KEVENT_REG_IN)) {
+		errmsg = "kevent_register()";
+		goto err;
+	}
+	for (size_t i = 0; i < NB_AF; i++) {
+		if (server.sck_cb[i].fd < 0)
+			continue;
+		if (!kevent_register(server.sck_cb[i].fd, &server.sck_cb[i], KEVENT_REG_IN)) {
+			errmsg = "kevent_register()";
+			goto err;
+		}
+	}
+
+	fprintf(stderr, ARGV0 ": PID: %" PRIuMAX "\n", (uintmax_t)getpid());
+	if (server.pidfile != NULL) {
+		fprintf(server.pidfile, "%" PRIdMAX "\n", (intmax_t)getpid());
+		fflush(server.pidfile);
 	}
 
 	server_loop();
@@ -1254,5 +1303,7 @@ out:
 
 	if (server.pidfile != NULL)
 		fclose(server.pidfile);
+	if (bindfile != NULL)
+		fclose(bindfile);
 	return ret;
 }
