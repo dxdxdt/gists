@@ -60,6 +60,7 @@ struct mmem_arena {
 int mkmemfile(int *flags);
 void *mmemfile(int fd, off_t ofs, size_t req, size_t *len, size_t *size, int *flags);
 void *mmemfile_aligned(int fd, off_t ofs, size_t len, int *flags);
+bool mmemfile_align_size(size_t req, size_t *out);
 
 /*
  * Simple O(N) page allocator implementation

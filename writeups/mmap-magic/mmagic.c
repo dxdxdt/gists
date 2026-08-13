@@ -156,14 +156,12 @@ void *mmemfile(int fd, off_t ofs, size_t req, size_t *out_len, size_t *out_size,
 {
 	size_t len, size;
 	void *ret;
-	bool ovf = false;
+	bool ovf;
 
 	if (req == 0)
 		return NULL;
 
-	cache_pagesize();
-
-	len = align_up(req, pagesize, &ovf);
+	ovf = mmemfile_align_size(req, &len);
 	/*
 	 * Thread-safety:
 	 *
@@ -348,6 +346,22 @@ void *mmemfile_aligned(int fd, off_t ofs, size_t len, int *in_flags)
 	if (in_flags != NULL)
 		*in_flags = out_flags;
 	return a;
+}
+
+bool mmemfile_align_size(size_t req, size_t *out)
+{
+	size_t len;
+	bool ret;
+
+	cache_pagesize();
+
+	len = align_up(req, pagesize, &ret);
+	if (ret)
+		errno = EOVERFLOW;
+	else if (out != NULL)
+		*out = len;
+
+	return ret;
 }
 
 void mmem_arena_init(struct mmem_arena *a)
