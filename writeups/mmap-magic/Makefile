@@ -4,6 +4,7 @@ SETTLEDOWN ?= 2
 DATASOURCE ?= /dev/urandom
 BUFSIZE ?= 0
 CKSUM ?= sha256sum
+NC_OPTS ?=
 
 OBJS = mmagic.o mmap-*-test mmap-stack sparse-array tcp-echo-server a b
 CFLAGS = \
@@ -24,28 +25,37 @@ test: mmap-alias-test mmap-arena-test a b
 	! ./mmap-buffer-test -Fw > /dev/null
 	! ./mmap-buffer-test -Fw > wrapguard-Fw.tmp
 
-test-tcp-echo-server: tcp-echo-server hashfifo.tmp
+test-tcp-echo-server: tcp-echo-server
+	rm -f hashfifo.tmp lenfifo-in.tmp lenfifo-out.tmp
+	mkfifo hashfifo.tmp lenfifo-in.tmp lenfifo-out.tmp
+	timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) $(CKSUM) < "hashfifo.tmp" > "hash-out.tmp" &
+	timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) wc -c < "lenfifo-in.tmp" > "len-in.tmp" &
+	timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) wc -c < "lenfifo-out.tmp" > "len-out.tmp" &
+
 	time timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) ./tcp-echo-server -zs "$(BUFSIZE)" \
 		-p "tcp-echo-server.pid" &
-	$(CKSUM) "hashfifo.tmp" | cut -d ' ' -f 1 > "hash-out.tmp" &
-	timeout $(RUNTIME) cat "$(DATASOURCE)" | tee "hashfifo.tmp" | nc localhost 7777 | \
-		$(CKSUM) | cut -d ' ' -f 1 > "hash-in.tmp"
+	timeout $(RUNTIME) cat "$(DATASOURCE)" | tee "hashfifo.tmp" | tee "lenfifo-in.tmp" | \
+		nc $(NC_OPTS) localhost 7777 | tee "lenfifo-out.tmp" | $(CKSUM) > "hash-in.tmp"
 	diff "hash-in.tmp" "hash-out.tmp"
-	kill -TERM $$(cat "tcp-echo-server.pid")
+	kill -TERM $$(cat "tcp-echo-server.pid") || true
+	rm -f "tcp-echo-server.pid"
+
+	rm -f hashfifo.tmp lenfifo-in.tmp lenfifo-out.tmp
+	mkfifo hashfifo.tmp lenfifo-in.tmp lenfifo-out.tmp
+	timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) $(CKSUM) < "hashfifo.tmp" > "hash-out.tmp" &
+	timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) wc -c < "lenfifo-in.tmp" > "len-in.tmp" &
+	timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) wc -c < "lenfifo-out.tmp" > "len-out.tmp" &
 
 	time timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) ./tcp-echo-server -s "$(BUFSIZE)" \
 		-p "tcp-echo-server.pid" &
-	$(CKSUM) "hashfifo.tmp" | cut -d ' ' -f 1 > "hash-out.tmp" &
-	timeout $(RUNTIME) cat "$(DATASOURCE)" | tee "hashfifo.tmp" | nc localhost 7777 | \
-		$(CKSUM) | cut -d ' ' -f 1 > "hash-in.tmp"
+	timeout $(RUNTIME) cat "$(DATASOURCE)" | tee "hashfifo.tmp" | tee "lenfifo-in.tmp" | \
+		nc $(NC_OPTS) localhost 7777 | tee "lenfifo-out.tmp" | $(CKSUM) > "hash-in.tmp"
 	diff "hash-in.tmp" "hash-out.tmp"
-	kill -TERM $$(cat "tcp-echo-server.pid")
+	kill -TERM $$(cat "tcp-echo-server.pid") || true
+	rm -f "tcp-echo-server.pid"
 
 clean:
 	rm -f $(OBJS) *.tmp *.pid
-
-hashfifo.tmp:
-	[ -p "$@" ] || mkfifo "$@"
 
 mmagic.o: mmagic.c mmagic.h
 	$(CC_CMD) -c -o mmagic.o mmagic.c

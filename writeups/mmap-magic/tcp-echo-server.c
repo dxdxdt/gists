@@ -765,6 +765,8 @@ static ssize_t do_rw_nocirc(int fd, ssize_t (*rw)(int fd, void *buf, size_t len)
 		len -= (size_t)ret;
 		if (ofs >= size)
 			ofs -= size;
+		if (len == 0)
+			return ret;
 
 		rwsize = rw(fd, buf + ofs, len);
 		if (rwsize > 0)
