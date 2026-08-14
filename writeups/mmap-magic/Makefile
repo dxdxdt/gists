@@ -5,6 +5,7 @@ DATASOURCE ?= /dev/urandom
 BUFSIZE ?= 0
 CKSUM ?= cksum -a sha256
 NC_OPTS ?=
+BASELINE_OPTS ?= -m
 
 OBJS = mmagic.o mmap-*-test mmap-stack sparse-array tcp-echo-server a b
 CFLAGS = \
@@ -32,7 +33,7 @@ test-tcp-echo-server: tcp-echo-server
 	timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) wc -c < "lenfifo-in.tmp" > "len-in.tmp" &
 	timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) wc -c < "lenfifo-out.tmp" > "len-out.tmp" &
 
-	./tcp-echo-server -zs "$(BUFSIZE)" \
+	./tcp-echo-server $(BASELINE_OPTS) -s "$(BUFSIZE)" \
 		-D -b "tcp-echo-server.bound.tmp" -p "tcp-echo-server.pid" localhost 0
 	timeout $(RUNTIME) cat "$(DATASOURCE)" | tee "hashfifo.tmp" | tee "lenfifo-in.tmp" | \
 		nc $(NC_OPTS) localhost $$(grep -Eo '[0-9]+$$' "tcp-echo-server.bound.tmp" | head -n1) | \
@@ -55,6 +56,19 @@ test-tcp-echo-server: tcp-echo-server
 		tee "lenfifo-out.tmp" | $(CKSUM) > "hash-in.tmp"
 	sync "hash-in.tmp" "hash-out.tmp"
 	diff "hash-in.tmp" "hash-out.tmp"
+	kill -TERM $$(cat "tcp-echo-server.pid") || true
+	rm -f "tcp-echo-server.pid"
+
+benchmark-tcp-echo-server: tcp-echo-server
+	time timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) ./tcp-echo-server \
+		$(BASELINE_OPTS) -p "tcp-echo-server.pid" -s "$(BUFSIZE)" 7777 &
+	! timeout $(RUNTIME) nc $(NC_OPTS) localhost 7777 < "$(DATASOURCE)" > /dev/null
+	kill -TERM $$(cat "tcp-echo-server.pid") || true
+	rm -f "tcp-echo-server.pid"
+
+	time timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) ./tcp-echo-server \
+		-p "tcp-echo-server.pid" -s "$(BUFSIZE)" 7778 &
+	! timeout $(RUNTIME) nc $(NC_OPTS) localhost 7778 < "$(DATASOURCE)" > /dev/null
 	kill -TERM $$(cat "tcp-echo-server.pid") || true
 	rm -f "tcp-echo-server.pid"
 

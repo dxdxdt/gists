@@ -92,6 +92,7 @@ static struct {
 	struct timespec timeout;
 	bool help:1;
 	bool nocirc:1;
+	bool usemalloc:1;
 	bool reuseport:1;
 	bool daemonise:1;
 } param = {
@@ -444,8 +445,12 @@ static struct client_ctx *add_conn_ctx(const int fd)
 		return NULL;
 	if (param.nocirc)
 		req_flags |= MEMFILE_WRAPGUARD;
-	ret->buf.m = mmem_arena_req(&server.arena, param.bufsize,
-			&ret->buf.size, NULL, &req_flags);
+	if (param.usemalloc) {
+		ret->buf.m = malloc(param.bufsize);
+		ret->buf.size = param.bufsize;
+	} else
+		ret->buf.m = mmem_arena_req(&server.arena, param.bufsize,
+				&ret->buf.size, NULL, &req_flags);
 	if (ret->buf.m == NULL)
 		goto err;
 
@@ -465,7 +470,10 @@ static struct client_ctx *add_conn_ctx(const int fd)
 
 	return ret;
 err:
-	mmem_arena_rm(&server.arena, ret->buf.m, NULL);
+	if (param.usemalloc)
+		free(ret->buf.m);
+	else
+		mmem_arena_rm(&server.arena, ret->buf.m, NULL);
 	free(ret);
 	return NULL;
 }
@@ -497,7 +505,10 @@ static void rm_conn_ctx(struct client_ctx *c)
 
 	TAILQ_REMOVE(&server.clist.head, c, entries);
 	server.clist.cnt--;
-	mmem_arena_rm(&server.arena, c->buf.m, NULL);
+	if (param.usemalloc)
+		free(c->buf.m);
+	else
+		mmem_arena_rm(&server.arena, c->buf.m, NULL);
 	kevent_unregister(c->cb.fd);
 	close(c->cb.fd);
 
@@ -585,13 +596,13 @@ static bool setup_server_socket(int *gai_err)
 
 	if (!tried) {
 		errno = EAFNOSUPPORT;
-		return false;
+		goto out;
 	}
-	return true;
+	ret = true;
 out:
 	if (ai != NULL)
 		freeaddrinfo(ai);
-	for (size_t i = 0; i < NB_AF; i++) {
+	for (size_t i = 0; !ret && i < NB_AF; i++) {
 		if (server.sck_cb[i].fd >= 0) {
 			close(server.sck_cb[i].fd);
 			server.sck_cb[i].fd = -1;
@@ -769,6 +780,8 @@ static ssize_t do_rw_nocirc(int fd, ssize_t (*rw)(int fd, void *buf, size_t len)
 			ofs -= size;
 		if (len == 0)
 			return ret;
+		if (ofs + len > size)
+			len = size - ofs;
 
 		rwsize = rw(fd, buf + ofs, len);
 		if (rwsize > 0)
@@ -979,7 +992,7 @@ static void destroy_all_conn(void)
 
 static void usage(FILE *f, const bool full)
 {
-	fprintf(f, "Usage: " ARGV0 " [-h] [-46RzD] [-s SIZE] [-M MAX] "
+	fprintf(f, "Usage: " ARGV0 " [-h] [-46RzDm] [-s SIZE] [-M MAX] "
 			"[-T TIMEOUT] [-p PIDFILE] [-b BINDFILE] [HOST] [PORT]\n");
 	if (!full)
 		return;
@@ -989,6 +1002,7 @@ static void usage(FILE *f, const bool full)
 			"  -6: bind IPv6 only\n"
 			"  -R: enable SO_REUSEPORT(_LB)\n"
 			"  -z: treat buffer as non-circular\n"
+			"  -m: use malloc() (implies -z)\n"
 			"  -s SIZE: desired buffer size\n"
 			"           (actual size is rounded up to system page size)\n"
 			"  -M MAX: max connections\n"
@@ -1003,7 +1017,7 @@ static void parse_opts(int argc, char *argv[])
 	bool noarg = false;
 
 	for (;;) {
-		const int c = getopt(argc, (char *const *)argv, "h46RzDs:M:T:p:b:");
+		const int c = getopt(argc, (char *const *)argv, "h46RzDms:M:T:p:b:");
 		int err;
 		double tmpf;
 
@@ -1024,6 +1038,9 @@ static void parse_opts(int argc, char *argv[])
 			break;
 		case 'z':
 			param.nocirc = true;
+			break;
+		case 'm':
+			param.usemalloc = param.nocirc = true;
 			break;
 		case 's':
 			errno = EINVAL;
