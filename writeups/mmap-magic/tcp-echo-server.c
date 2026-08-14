@@ -194,7 +194,6 @@ static struct {
 		bool ovf_accepted:1;
 		bool ovf_total_in:1;
 		bool ovf_total_out:1;
-		bool wrapped:1;
 		bool breather:1;
 	} stat;
 	_Alignas(64) char sa_buf[INET6_ADDRSTRLEN - 1 + sizeof("[]:65535")];
@@ -658,7 +657,6 @@ static void print_stats(void)
 		"  erred: %" PRIuMAX "\n"
 		"  bytes-in: %" PRIuMAX " %s\n"
 		"  bytes-out: %" PRIuMAX " %s\n"
-		"  wrapped: %s\n"
 		"  breather: %s\n",
 		server.stat.accepted, OVFSTR[server.stat.ovf_accepted],
 		server.clist.cnt,
@@ -666,7 +664,6 @@ static void print_stats(void)
 		server.stat.erred,
 		server.stat.total_in, OVFSTR[server.stat.ovf_total_in],
 		server.stat.total_out, OVFSTR[server.stat.ovf_total_out],
-		BOOLSTR[server.stat.wrapped],
 		BOOLSTR[server.stat.breather]);
 }
 
@@ -799,11 +796,8 @@ static ssize_t do_rw(int fd, ssize_t (*rw)(int fd, void *buf, size_t len),
 
 	if (param.nocirc)
 		ret = do_rw_nocirc(fd, rw, buf, size, ofs, len);
-	else {
+	else
 		ret = rw(fd, buf + ofs, len);
-		if (ret > 0 && ofs + (size_t)ret >= size)
-			server.stat.wrapped = true;
-	}
 
 	return ret;
 }

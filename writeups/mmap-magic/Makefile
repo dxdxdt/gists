@@ -40,7 +40,7 @@ test-tcp-echo-server: tcp-echo-server
 		tee "lenfifo-out.tmp" | $(CKSUM) > "hash-in.tmp"
 	sync "hash-in.tmp" "hash-out.tmp"
 	diff "hash-in.tmp" "hash-out.tmp"
-	kill -TERM $$(cat "tcp-echo-server.pid") || true
+	kill $$(cat "tcp-echo-server.pid") || true
 	rm -f "tcp-echo-server.pid"
 
 	rm -f hashfifo.tmp lenfifo-in.tmp lenfifo-out.tmp
@@ -56,20 +56,20 @@ test-tcp-echo-server: tcp-echo-server
 		tee "lenfifo-out.tmp" | $(CKSUM) > "hash-in.tmp"
 	sync "hash-in.tmp" "hash-out.tmp"
 	diff "hash-in.tmp" "hash-out.tmp"
-	kill -TERM $$(cat "tcp-echo-server.pid") || true
+	kill $$(cat "tcp-echo-server.pid") || true
 	rm -f "tcp-echo-server.pid"
 
 benchmark-tcp-echo-server: tcp-echo-server
 	time timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) ./tcp-echo-server \
 		$(BASELINE_OPTS) -p "tcp-echo-server.pid" -s "$(BUFSIZE)" 7777 &
 	! timeout $(RUNTIME) nc $(NC_OPTS) localhost 7777 < "$(DATASOURCE)" > /dev/null
-	kill -TERM $$(cat "tcp-echo-server.pid") || true
+	kill $$(cat "tcp-echo-server.pid") || true
 	rm -f "tcp-echo-server.pid"
 
 	time timeout $$(( $(RUNTIME) + $(SETTLEDOWN) )) ./tcp-echo-server \
 		-p "tcp-echo-server.pid" -s "$(BUFSIZE)" 7778 &
 	! timeout $(RUNTIME) nc $(NC_OPTS) localhost 7778 < "$(DATASOURCE)" > /dev/null
-	kill -TERM $$(cat "tcp-echo-server.pid") || true
+	kill $$(cat "tcp-echo-server.pid") || true
 	rm -f "tcp-echo-server.pid"
 
 clean:
