@@ -191,9 +191,13 @@ static struct {
 		uintmax_t erred;
 		uintmax_t total_in;
 		uintmax_t total_out;
+		uintmax_t calls_in;
+		uintmax_t calls_out;
 		bool ovf_accepted:1;
 		bool ovf_total_in:1;
 		bool ovf_total_out:1;
+		bool ovf_calls_in:1;
+		bool ovf_calls_out:1;
 		bool breather:1;
 	} stat;
 	_Alignas(64) char sa_buf[INET6_ADDRSTRLEN - 1 + sizeof("[]:65535")];
@@ -650,6 +654,9 @@ static void setup_sighandlers(void)
 
 static void print_stats(void)
 {
+	const double bpc_in = (double)server.stat.total_in / (double)server.stat.calls_in;
+	const double bpc_out = (double)server.stat.total_out / (double)server.stat.calls_out;
+
 	printf("stats:\n"
 		"  accepted: %" PRIuMAX " %s\n"
 		"  active: %zu\n"
@@ -657,6 +664,10 @@ static void print_stats(void)
 		"  erred: %" PRIuMAX "\n"
 		"  bytes-in: %" PRIuMAX " %s\n"
 		"  bytes-out: %" PRIuMAX " %s\n"
+		"  calls-in: %" PRIuMAX " %s\n"
+		"  calls-out: %" PRIuMAX " %s\n"
+		"  bpc-in: %.2lf\n"
+		"  bpc-out: %.2lf\n"
 		"  breather: %s\n",
 		server.stat.accepted, OVFSTR[server.stat.ovf_accepted],
 		server.clist.cnt,
@@ -664,6 +675,10 @@ static void print_stats(void)
 		server.stat.erred,
 		server.stat.total_in, OVFSTR[server.stat.ovf_total_in],
 		server.stat.total_out, OVFSTR[server.stat.ovf_total_out],
+		server.stat.calls_in, OVFSTR[server.stat.ovf_calls_in],
+		server.stat.calls_out, OVFSTR[server.stat.ovf_calls_out],
+		bpc_in,
+		bpc_out,
 		BOOLSTR[server.stat.breather]);
 }
 
@@ -760,46 +775,42 @@ static bool serve_incoming(void *ctx_in, int trig, int *out)
 }
 
 static ssize_t do_rw_nocirc(int fd, ssize_t (*rw)(int fd, void *buf, size_t len),
-		uint8_t *buf, size_t size, size_t ofs, size_t len)
+		uint8_t *buf, size_t size, size_t ofs, size_t len,
+		unsigned int *calls)
 {
 	ssize_t ret;
 
-	if (ofs + len > size) {
-		ssize_t rwsize;
-
+	if (ofs + len > size)
 		ret = rw(fd, buf + ofs, size - ofs);
-		if (ret <= 0)
-			return ret;
-
-		ofs += (size_t)ret;
-		len -= (size_t)ret;
-		if (ofs >= size)
-			ofs -= size;
-		if (len == 0)
-			return ret;
-		if (ofs + len > size)
-			len = size - ofs;
-
-		rwsize = rw(fd, buf + ofs, len);
-		if (rwsize > 0)
-			ret += (size_t)rwsize;
-	} else
+	else
 		ret = rw(fd, buf + ofs, len);
+
+	if (ret > 0)
+		(*calls)++;
+
+	return ret;
+}
+
+static ssize_t do_rw_circ(int fd, ssize_t (*rw)(int fd, void *buf, size_t len),
+		uint8_t *buf, size_t size, size_t ofs, size_t len,
+		unsigned int *calls)
+{
+	ssize_t ret;
+
+	ret = rw(fd, buf + ofs, len);
+	if (ret > 0)
+		(*calls)++;
 
 	return ret;
 }
 
 static ssize_t do_rw(int fd, ssize_t (*rw)(int fd, void *buf, size_t len),
-		uint8_t *buf, size_t size, size_t ofs, size_t len)
+		uint8_t *buf, size_t size, size_t ofs, size_t len,
+		unsigned int *calls)
 {
-	ssize_t ret;
-
 	if (param.nocirc)
-		ret = do_rw_nocirc(fd, rw, buf, size, ofs, len);
-	else
-		ret = rw(fd, buf + ofs, len);
-
-	return ret;
+		return do_rw_nocirc(fd, rw, buf, size, ofs, len, calls);
+	return do_rw_circ(fd, rw, buf, size, ofs, len, calls);
 }
 
 static bool serve_client(void *ctx_in, int trig, int *out)
@@ -807,6 +818,7 @@ static bool serve_client(void *ctx_in, int trig, int *out)
 	struct client_ctx *c = ctx_in;
 	size_t avail;
 	ssize_t rwsize;
+	unsigned int calls = 0;
 
 	if (trig == KEVENT_REG_IN) {
 		size_t ofs = c->buf.ofs + c->buf.len;
@@ -816,7 +828,7 @@ static bool serve_client(void *ctx_in, int trig, int *out)
 			/* Don't use mod(%) because division is slow! */
 			ofs -= c->buf.size;
 
-		rwsize = do_rw(c->cb.fd, read, c->buf.m, c->buf.size, ofs, avail);
+		rwsize = do_rw(c->cb.fd, read, c->buf.m, c->buf.size, ofs, avail, &calls);
 		if (rwsize == 0)
 			c->flags |= CCTX_FIN;
 		else if (rwsize < 0)
@@ -834,10 +846,14 @@ static bool serve_client(void *ctx_in, int trig, int *out)
 			server.stat.total_in += (size_t)rwsize;
 			if (server.stat.total_in < (size_t)rwsize)
 				server.stat.ovf_total_in = true;
+
+			server.stat.calls_in += calls;
+			if (server.stat.calls_in < calls)
+				server.stat.ovf_calls_in = true;
 		}
 	} else if (trig == KEVENT_REG_OUT) {
 		rwsize = do_rw(c->cb.fd, (ssize_t(*)(int fd, void *buf, size_t len))write,
-				c->buf.m, c->buf.size, c->buf.ofs, c->buf.len);
+				c->buf.m, c->buf.size, c->buf.ofs, c->buf.len, &calls);
 		if (rwsize == 0) {
 			errno = EIO;
 			rwsize = -1;
@@ -860,6 +876,10 @@ static bool serve_client(void *ctx_in, int trig, int *out)
 			server.stat.total_out += (size_t)rwsize;
 			if (server.stat.total_out < (size_t)rwsize)
 				server.stat.ovf_total_out = true;
+
+			server.stat.calls_out += calls;
+			if (server.stat.calls_out < calls)
+				server.stat.ovf_calls_out = true;
 		}
 	}
 
