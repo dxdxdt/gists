@@ -90,6 +90,7 @@ static struct {
 	unsigned int maxconn;		/* (0, MAX_CONN] */
 	int evtpt;			/* events per tick (0, INT_MAX] */
 	struct timespec timeout;
+	struct timespec duration;
 	bool help:1;
 	bool nocirc:1;
 	bool usemalloc:1;
@@ -103,6 +104,7 @@ static struct {
 	.maxconn = MAX_CONN,
 	.evtpt = 1024,
 	.timeout = { .tv_sec = 60, },	/* 1 min */
+	.duration = { .tv_sec = -1, },	/* (disabled) */
 };
 
 struct cbuffer {
@@ -117,6 +119,7 @@ struct cbuffer {
 #define CCTX_STAT_OVF_OUT	(0x04)
 #define CCTX_ERR		(0x08)
 #define CCTX_TIMEDOUT		(0x10)
+#define CCTX_EOL		(0x20)
 
 #define KEVENT_REG_DEL		(0x00)
 #define KEVENT_REG_IN		(0x01)
@@ -129,7 +132,8 @@ struct evtcb_ctx {
 };
 
 struct client_ctx {
-	TAILQ_ENTRY(client_ctx) entries;
+	TAILQ_ENTRY(client_ctx) e_timeout;
+	TAILQ_ENTRY(client_ctx) e_duration;
 	struct cbuffer buf;
 	struct evtcb_ctx cb;
 	int err;
@@ -153,15 +157,18 @@ static struct {
 	/*
 	 * The client list in the LRU order
 	 *
-	 * The client that has done I/O most recently appears first.
+	 * The client that has done I/O most recently appears first in
+	 * h_timeout. The client that's been recently accepted appears first in
+	 * h_duration.
 	 *
 	 * When an element gets added/removed/operated, it will be moved to the
-	 * start of the list. When handling connection timeout in
+	 * start of h_timeout. When handling connection timeout in
 	 * cull_timedout(), keep removing the last element until the last
 	 * element is the one that hasn't timed out.
 	 */
 	struct {
-		struct client_entry_head head;
+		struct client_entry_head h_timeout;
+		struct client_entry_head h_duration;
 		size_t cnt;
 	} clist;
 	struct mmem_arena arena;
@@ -188,6 +195,7 @@ static struct {
 	struct {
 		uintmax_t accepted;
 		uintmax_t timedout;
+		uintmax_t eol;
 		uintmax_t erred;
 		uintmax_t total_in;
 		uintmax_t total_out;
@@ -464,7 +472,8 @@ static struct client_ctx *add_conn_ctx(const int fd)
 	if (!kevent_register(fd, &ret->cb, KEVENT_REG_IN))
 		goto err;
 
-	TAILQ_INSERT_HEAD(&server.clist.head, ret, entries);
+	TAILQ_INSERT_HEAD(&server.clist.h_timeout, ret, e_timeout);
+	TAILQ_INSERT_HEAD(&server.clist.h_duration, ret, e_duration);
 	server.clist.cnt++;
 
 	server.stat.accepted++;
@@ -490,6 +499,8 @@ static void rm_conn_ctx(struct client_ctx *c)
 	mksockaddrstr(&c->s.a);
 	if (c->flags & CCTX_TIMEDOUT)
 		server.stat.timedout++;
+	if (c->flags & CCTX_EOL)
+		server.stat.eol++;
 	if (c->flags & CCTX_ERR) {
 		server.stat.erred++;
 
@@ -498,15 +509,17 @@ static void rm_conn_ctx(struct client_ctx *c)
 		brackets[1] = ")";
 	} else
 		brackets[0] = brackets[1] = errmsg = "";
-	fprintf(stderr, ARGV0 ": %s: closed%s%s%s%s%s: in=%" PRIuMAX " %s out=%" PRIuMAX " %s\n",
+	fprintf(stderr, ARGV0 ": %s: closed%s%s%s%s%s%s: in=%" PRIuMAX " %s out=%" PRIuMAX " %s\n",
 			server.sa_buf,
 			c->flags & CCTX_TIMEDOUT ?	" TIMEDOUT" : "",
+			c->flags & CCTX_EOL ?		" EOL" : "",
 			c->flags & CCTX_ERR ?		" ERROR" : "",
 			brackets[0], errmsg, brackets[1],
 			c->total_in, OVFSTR[!!(c->flags & CCTX_STAT_OVF_IN)],
 			c->total_out, OVFSTR[!!(c->flags & CCTX_STAT_OVF_OUT)]);
 
-	TAILQ_REMOVE(&server.clist.head, c, entries);
+	TAILQ_REMOVE(&server.clist.h_timeout, c, e_timeout);
+	TAILQ_REMOVE(&server.clist.h_duration, c, e_duration);
 	server.clist.cnt--;
 	if (param.usemalloc)
 		free(c->buf.m);
@@ -661,6 +674,7 @@ static void print_stats(void)
 		"  accepted: %" PRIuMAX " %s\n"
 		"  active: %zu\n"
 		"  timedout: %" PRIuMAX "\n"
+		"  eol: %" PRIuMAX "\n"
 		"  erred: %" PRIuMAX "\n"
 		"  bytes-in: %" PRIuMAX " %s\n"
 		"  bytes-out: %" PRIuMAX " %s\n"
@@ -672,6 +686,7 @@ static void print_stats(void)
 		server.stat.accepted, OVFSTR[server.stat.ovf_accepted],
 		server.clist.cnt,
 		server.stat.timedout,
+		server.stat.eol,
 		server.stat.erred,
 		server.stat.total_in, OVFSTR[server.stat.ovf_total_in],
 		server.stat.total_out, OVFSTR[server.stat.ovf_total_out],
@@ -884,8 +899,8 @@ static bool serve_client(void *ctx_in, int trig, int *out)
 	}
 
 	c->ts.last = server.loop_ctx.now;
-	TAILQ_REMOVE(&server.clist.head, c, entries);
-	TAILQ_INSERT_HEAD(&server.clist.head, c, entries);
+	TAILQ_REMOVE(&server.clist.h_timeout, c, e_timeout);
+	TAILQ_INSERT_HEAD(&server.clist.h_timeout, c, e_timeout);
 
 	if (c->buf.len > 0)
 		*out = KEVENT_REG_OUT;
@@ -917,7 +932,7 @@ static void cull_timedout(void)
 	struct timespec dt;
 
 	for (;;) {
-		c = TAILQ_LAST(&server.clist.head, client_entry_head);
+		c = TAILQ_LAST(&server.clist.h_timeout, client_entry_head);
 		if (c == NULL)
 			return;
 
@@ -930,31 +945,75 @@ static void cull_timedout(void)
 	}
 }
 
-static void update_timeout(void)
+static void cull_endoflife(void)
 {
+	struct client_ctx *c;
 	struct timespec dt;
-	struct client_ctx *c = TAILQ_LAST(&server.clist.head, client_entry_head);
 
-	if (param.timeout.tv_sec < 0 || c == NULL) {
+	if (param.duration.tv_sec < 0)
+		return;
+
+	for (;;) {
+		c = TAILQ_LAST(&server.clist.h_duration, client_entry_head);
+		if (c == NULL)
+			return;
+
+		timespecsub(&server.loop_ctx.now, &c->ts.since, &dt);
+		if (timespeccmp(&dt, &param.duration, <))
+			return;
+
+		c->flags |= CCTX_EOL;
+		rm_conn_ctx(c);
+	}
+}
+
+static void update_evt_timeout(void)
+{
+	const struct timespec *o[2], *ts[2], *m;
+	struct timespec dt[2] = { { .tv_sec = -1, }, { .tv_sec = -1, } };
+	int ms;
+
+	if ((param.timeout.tv_sec < 0 && param.duration.tv_sec < 0) ||
+			server.clist.cnt == 0) {
 		server.loop_ctx.ms_wait_timeout = -1;
 		server.loop_ctx.ts_wait_timeout.tv_sec = -1;
 		server.loop_ctx.ts_wait_timeout.tv_nsec = 0;
 		return;
 	}
 
-	timespecsub(&server.loop_ctx.now, &c->ts.last, &dt);
-	if (timespeccmp(&dt, &param.timeout, <)) {
-		int ms;
+	ts[0] = &TAILQ_LAST(&server.clist.h_timeout, client_entry_head)->ts.last;
+	o[0] = &param.timeout;
+	ts[1] = &TAILQ_LAST(&server.clist.h_duration, client_entry_head)->ts.since;
+	o[1] = &param.duration;
 
-		timespecsub(&param.timeout, &dt, &server.loop_ctx.ts_wait_timeout);
-		if (timespecms(&server.loop_ctx.ts_wait_timeout, &ms))
-			ms = INT_MAX; /* around 24 days */
-		server.loop_ctx.ms_wait_timeout = ms;
-	} else {
-		server.loop_ctx.ms_wait_timeout = 0;
-		server.loop_ctx.ts_wait_timeout.tv_sec = 0;
-		server.loop_ctx.ts_wait_timeout.tv_nsec = 0;
+	for (size_t i = 0; i < 2; i++) {
+		if (o[i]->tv_sec < 0)
+			continue;
+
+		/* Calculate dt as time elapsed since ts */
+		timespecsub(&server.loop_ctx.now, ts[i], &dt[i]);
+		if (timespeccmp(&dt[i], o[i], >=))
+			/* Already triggered */
+			goto rightnow;
+		/* Calculate dt again as time remaining */
+		timespecsub(o[i], &dt[i], &dt[i]);
 	}
+
+	m = &dt[0];
+	for (size_t i = 1; i < 2; i++) {
+		if (m->tv_sec < 0 || timespeccmp(&dt[i], m, <))
+			m = &dt[i];
+	}
+
+	server.loop_ctx.ts_wait_timeout = *m;
+	if (timespecms(m, &ms))
+		ms = INT_MAX; /* around 24 days */
+	server.loop_ctx.ms_wait_timeout = ms;
+	return;
+rightnow:
+	server.loop_ctx.ms_wait_timeout = 0;
+	server.loop_ctx.ts_wait_timeout.tv_sec = 0;
+	server.loop_ctx.ts_wait_timeout.tv_nsec = 0;
 }
 
 static void server_loop(void)
@@ -970,7 +1029,7 @@ static void server_loop(void)
 			server.stat.breather = true;
 		}
 
-		update_timeout();
+		update_evt_timeout();
 		b = kevent_wait();
 		saved_errno = errno;
 		clock_gettime(CLOCK_MONOTONIC, &server.loop_ctx.now);
@@ -991,22 +1050,20 @@ static void server_loop(void)
 		}
 
 		cull_timedout();
+		cull_endoflife();
 	} while (!server.loop_ctx.exiting);
 }
 
 static void destroy_all_conn(void)
 {
-	struct client_ctx *c;
-
-	while (!TAILQ_EMPTY(&server.clist.head)) {
-		c = TAILQ_FIRST(&server.clist.head);
-		rm_conn_ctx(c);
-	}
+	/* Start from the recently used client to save some cache misses. */
+	while (!TAILQ_EMPTY(&server.clist.h_timeout))
+		rm_conn_ctx(TAILQ_FIRST(&server.clist.h_timeout));
 }
 
 static void usage(FILE *f, const bool full)
 {
-	fprintf(f, "Usage: " ARGV0 " [-h] [-46RzDm] [-s SIZE] [-M MAX] "
+	fprintf(f, "Usage: " ARGV0 " [-h] [-46RzDm] [-s SIZE] [-M MAX] [-E DURATION] "
 			"[-T TIMEOUT] [-p PIDFILE] [-b BINDFILE] [HOST] [PORT]\n");
 	if (!full)
 		return;
@@ -1023,7 +1080,34 @@ static void usage(FILE *f, const bool full)
 			"  -p PIDFILE: create a pid file and lock it\n"
 			"  -b BINDFILE: create a bind file\n"
 			"  -T TIMEOUT: connection inactivity timeout in seconds\n"
+			"  -E DURATION: max connection duration in seconds\n"
 			"  -D: run in background\n");
+}
+
+/* Same as what the sleep command accepts including "inf" or "infinity" */
+static bool parse_duration(const char *in, struct timespec *out)
+{
+	int err;
+	double tmpf;
+
+	errno = EINVAL;
+	err = sscanf(in, "%lf", &tmpf);
+	if (err != 1)
+		return false;
+
+	errno = ERANGE;
+	if (isnan(tmpf) || tmpf < 0.0)
+		return false;
+	if (isinf(tmpf)) {
+		out->tv_sec = -1;
+		out->tv_nsec = 0;
+	} else {
+		out->tv_sec = (time_t)tmpf;
+		tmpf -= (intmax_t)tmpf;
+		out->tv_nsec = (long)(tmpf * 1000000000.0);
+	}
+
+	return true;
 }
 
 static void parse_opts(int argc, char *argv[])
@@ -1031,9 +1115,8 @@ static void parse_opts(int argc, char *argv[])
 	bool noarg = false;
 
 	for (;;) {
-		const int c = getopt(argc, (char *const *)argv, "h46RzDms:M:T:p:b:");
+		const int c = getopt(argc, (char *const *)argv, "h46RzDms:M:T:p:b:E:");
 		int err;
-		double tmpf;
 
 		switch (c) {
 		case 'h':
@@ -1077,23 +1160,12 @@ static void parse_opts(int argc, char *argv[])
 				goto inval;
 			break;
 		case 'T':
-			/* Same as what the sleep command accepts including "inf" or "infinity" */
-			errno = EINVAL;
-			err = sscanf(optarg, "%lf", &tmpf);
-			if (err != 1)
+			if (!parse_duration(optarg, &param.timeout))
 				goto inval;
-
-			errno = ERANGE;
-			if (isnan(tmpf) || tmpf < 0.0)
+			break;
+		case 'E':
+			if (!parse_duration(optarg, &param.duration))
 				goto inval;
-			if (isinf(tmpf)) {
-				param.timeout.tv_sec = -1;
-				param.timeout.tv_nsec = 0;
-			} else {
-				param.timeout.tv_sec = (time_t)tmpf;
-				tmpf -= (intmax_t)tmpf;
-				param.timeout.tv_nsec = (long)(tmpf * 1000000000.0);
-			}
 			break;
 		case 'p':
 			param.pidfile = optarg;
@@ -1191,7 +1263,8 @@ int main(int argc, char *argv[])
 		exit(0);
 	}
 
-	TAILQ_INIT(&server.clist.head);
+	TAILQ_INIT(&server.clist.h_timeout);
+	TAILQ_INIT(&server.clist.h_duration);
 	mmem_arena_init(&server.arena);
 
 	if (param.bindfile != NULL) {
