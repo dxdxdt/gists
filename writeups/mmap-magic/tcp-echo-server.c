@@ -1016,10 +1016,20 @@ rightnow:
 	server.loop_ctx.ts_wait_timeout.tv_nsec = 0;
 }
 
+/* constexpr */ static clockid_t get_loop_clockid(void)
+{
+#ifdef CLOCK_MONOTONIC_COARSE
+	return CLOCK_MONOTONIC_COARSE;
+#else
+	return CLOCK_MONOTONIC;
+#endif
+}
+
 static void server_loop(void)
 {
+	const clockid_t loop_cid = get_loop_clockid();
 	bool b;
-	int saved_errno;
+	int saved_errno, err;
 
 	do {
 		if (server.loop_ctx.breather) {
@@ -1032,7 +1042,19 @@ static void server_loop(void)
 		update_evt_timeout();
 		b = kevent_wait();
 		saved_errno = errno;
-		clock_gettime(CLOCK_MONOTONIC, &server.loop_ctx.now);
+/*
+ * Yes, we've had TSC or the like on almost all modern architectures, but
+ * depending on the system set up, clock_gettime() could be still expensive an
+ * expensive syscall.
+ *
+ * Nothing can be done about this, except minimising the use of the syscall.
+ * That's why the timestamp is cached here. Especially on a VM, CLOCK_MONOTONIC
+ * is not available. As the precision of CLOCK_MONOTONIC is not required for
+ * this program, CLOCK_MONOTONIC_COARSE is being used here if available.
+ */
+		err = clock_gettime(loop_cid, &server.loop_ctx.now);
+		assert(err == 0);
+		(void)err;
 		if (b)
 			kevent_iterate();
 		else {
