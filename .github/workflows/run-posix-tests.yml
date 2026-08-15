@@ -27,6 +27,7 @@ jobs:
           - cd writeups/handle-sigbus && make clean test-truncate
           - cd writeups/mmap-magic    && make clean test
           - cd writeups/memalign      && make clean test
+          - cd writeups/vdso          && make clean test
         runner: [ubuntu-latest, macos-latest]
         exclude:
           - run: cd writeups/mmap-magic    && make clean test
@@ -48,6 +49,7 @@ jobs:
           - cd writeups/handle-sigbus && gmake clean test-truncate
           - cd writeups/mmap-magic    && gmake clean test
           - cd writeups/memalign      && gmake clean test
+          - cd writeups/vdso          && gmake clean test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
