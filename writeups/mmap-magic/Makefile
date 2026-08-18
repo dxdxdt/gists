@@ -89,7 +89,7 @@ mmap-arena-test: mmap-arena-test.c mmagic.o
 		$(CC_CMD) $(LDADD_NETBSD) mmap-arena-test.c mmagic.o -o mmap-arena-test
 
 mmap-stack: mmap-stack.c
-	$(CC_CMD) -o mmap-stack mmap-stack.c
+	$(CC_CMD) -lpthread -o mmap-stack mmap-stack.c
 sparse-array: mmagic.o sparse-array.c
 	$(CC_CMD) $(LDADD) sparse-array.c mmagic.o -o sparse-array || \
 		$(CC_CMD) $(LDADD_NETBSD) sparse-array.c mmagic.o -o sparse-array

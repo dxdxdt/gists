@@ -42,7 +42,7 @@ ntree128-chaincmp: ntree128.c bsd.h
 ntree128h: ntree128h.c bsd.h
 	$(CC11_R) ntree128h.c -o ntree128h
 ntree128a: ntree128a.c bsd.h
-	$(CC11_R) ntree128a.c -o ntree128a
+	$(CC11_R) -lpthread ntree128a.c -o ntree128a
 genrand: genrand.c
 	$(CC11_R) genrand.c -o genrand
 
