@@ -970,7 +970,7 @@ static void cull_endoflife(void)
 static void update_evt_timeout(void)
 {
 	const struct timespec *o[2], *ts[2], *m;
-	struct timespec dt[2] = { { .tv_sec = -1, }, { .tv_sec = -1, } };
+	struct timespec dt;
 	int ms;
 
 	if ((param.timeout.tv_sec < 0 && param.duration.tv_sec < 0) ||
@@ -985,24 +985,22 @@ static void update_evt_timeout(void)
 	o[0] = &param.timeout;
 	ts[1] = &TAILQ_LAST(&server.clist.h_duration, client_entry_head)->ts.since;
 	o[1] = &param.duration;
+	m = NULL;
 
 	for (size_t i = 0; i < 2; i++) {
 		if (o[i]->tv_sec < 0)
 			continue;
 
 		/* Calculate dt as time elapsed since ts */
-		timespecsub(&server.loop_ctx.now, ts[i], &dt[i]);
-		if (timespeccmp(&dt[i], o[i], >=))
+		timespecsub(&server.loop_ctx.now, ts[i], &dt);
+		if (timespeccmp(&dt, o[i], >=))
 			/* Already triggered */
 			goto rightnow;
 		/* Calculate dt again as time remaining */
-		timespecsub(o[i], &dt[i], &dt[i]);
-	}
-
-	m = &dt[0];
-	for (size_t i = 1; i < 2; i++) {
-		if (m->tv_sec < 0 || timespeccmp(&dt[i], m, <))
-			m = &dt[i];
+		timespecsub(o[i], &dt, &dt);
+		/* Update the min */
+		if (m == NULL || timespeccmp(&dt, m, <))
+			m = &dt;
 	}
 
 	server.loop_ctx.ts_wait_timeout = *m;
