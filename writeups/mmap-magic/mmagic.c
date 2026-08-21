@@ -19,6 +19,15 @@
 #define HAS_MEMFD 1
 #endif
 
+#define MMEM_GMA_REGIONS (3)
+
+struct mmem_guarded {
+	size_t req;
+	size_t mapsize;
+	void *m;
+	size_t _rsv;
+};
+
 static long pagesize = -1;
 
 #ifdef __NetBSD__
@@ -57,6 +66,25 @@ static inline size_t align_up(size_t x, const size_t alignment, bool *out_ovf)
 	if (out_ovf != NULL)
 		*out_ovf = ovf;
 
+	return ret;
+}
+
+static inline bool sum_sizes_safe(const size_t *arr, size_t *out)
+{
+	bool ret = false;
+	size_t tmp, sum = 0;
+
+	while (*arr > 0) {
+		tmp = sum + *(arr++);
+		if (tmp < sum) {
+			ret = true;
+			errno = EOVERFLOW;
+		}
+		sum = tmp;
+	}
+
+	if (out != NULL)
+		*out = sum;
 	return ret;
 }
 
@@ -589,8 +617,95 @@ const char *memfile_backing_name(const int type)
 
 int memfile_flags_name(const int flags, const size_t len, char *out)
 {
-	return snprintf(out, len, "%s%s%s",
+	return snprintf(out, len, "%s%s%s%s",
 			flags & MEMFILE_NO_INHERIT	? "NO_INHERIT "	: "",
 			flags & MEMFILE_DEALLOC		? "DEALLOC "	: "",
-			flags & MEMFILE_WRAPGUARD	? "WRAPGUARD "	: "");
+			flags & MEMFILE_WRAPGUARD	? "WRAPGUARD "	: "",
+			flags & MEMFILE_NORESERVE	? "NORESERVE "	: "");
+}
+
+struct mmem_guarded *mmem_alloc_guarded(size_t size, size_t *region,
+		void **near, void **far, int *in_flags)
+{
+	size_t aligned, sarr[MMEM_GMA_REGIONS + 1], mapsize;
+	void *pages[MMEM_GMA_REGIONS + 1];
+	struct mmem_guarded *ret;
+	int prot, flags, err, out_flags, execflag;
+
+	out_flags = in_flags != NULL ? *in_flags : 0;
+	execflag = out_flags & MEMFILE_EXEC ? PROT_EXEC : 0;
+
+	cache_pagesize();
+	if (mmemfile_align_size(size, &aligned))
+		return NULL;
+
+	sarr[0] = pagesize;
+	sarr[1] = aligned;
+	sarr[2] = pagesize;
+	sarr[3] = 0;
+	if (sum_sizes_safe(sarr, &mapsize))
+		return NULL;
+
+	ret = calloc(1, sizeof(struct mmem_guarded));
+	if (ret == NULL)
+		return NULL;
+	ret->req = size;
+	ret->mapsize = mapsize;
+
+	prot = PROT_NONE;
+	flags = MAP_PRIVATE|MAP_ANONYMOUS;
+#ifdef MAP_NORESERVE
+	flags |= MAP_NORESERVE;
+#endif
+	pages[0] = mmap(NULL, mapsize, prot, flags, -1, 0);
+	if (pages[0] == MAP_FAILED)
+		goto bail;
+	for (size_t i = 1; i < MMEM_GMA_REGIONS; i++)
+		pages[i] = (char*)pages[i - 1] + sarr[i - 1];
+
+	prot = PROT_READ|PROT_WRITE|execflag;
+#ifdef MAP_NORESERVE
+	flags = MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS;
+	pages[1] = mmap(pages[1], aligned, prot, flags, -1, 0);
+	if (pages[1] == MAP_FAILED)
+		goto bail;
+	out_flags |= MEMFILE_NORESERVE;
+#else
+	if (mprotect(pages[1], aligned, prot))
+		goto bail;
+	out_flags &= ~MEMFILE_NORESERVE;
+#endif
+
+	if (region != NULL)
+		*region = aligned;
+	if (near != NULL)
+		*near = pages[1];
+	if (far != NULL)
+		*far = (char*)pages[2] - size;
+	ret->m = pages[0];
+
+	if (in_flags != NULL)
+		*in_flags = out_flags;
+
+	return ret;
+bail:
+	if (pages[0] != MAP_FAILED) {
+		err = munmap(pages[0], mapsize);
+		assert(err == 0);
+		(void)err;
+	}
+	free(ret);
+	return NULL;
+}
+
+void mmem_free_guarded(struct mmem_guarded *obj)
+{
+	int err;
+
+	if (obj == NULL)
+		return;
+	err = munmap(obj->m, obj->mapsize);
+	assert(err == 0);
+	(void)err;
+	free(obj);
 }

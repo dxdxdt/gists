@@ -7,7 +7,18 @@ CKSUM ?= cksum -a sha256
 NC_OPTS ?=
 BASELINE_OPTS ?= -m
 
-OBJS = mmagic.o mmap-*-test mmap-stack sparse-array tcp-echo-server a b
+OBJS = \
+	mmagic.o \
+	mmap-buffer-test \
+	mmap-alias-test \
+	mmap-arena-test \
+	mmap-stack \
+	sparse-array \
+	tcp-echo-server \
+	normalpath \
+	test-normalpath \
+	a \
+	b
 CFLAGS = \
 	-std=c11 -Wall -Wextra -Wno-unused-parameter -Wno-unused-result \
 	-march=native -mtune=native -O2 -g \
@@ -18,13 +29,16 @@ LDADD_NETBSD = -lc -lrt
 
 .PHONY: test test-tcp-echo-server clean
 
-test: mmap-alias-test mmap-arena-test a b
+test: mmap-alias-test mmap-arena-test test-normalpath a b
+	./test-normalpath
 	diff a b
 	./mmap-alias-test
 	./mmap-arena-test
 	# memdev and vfs may behave differently (actually observed w/ Linux)
 	! ./mmap-buffer-test -Fw > /dev/null
 	! ./mmap-buffer-test -Fw > wrapguard-Fw.tmp
+
+all: $(OBJS)
 
 test-tcp-echo-server: tcp-echo-server
 	rm -f hashfifo.tmp lenfifo-in.tmp lenfifo-out.tmp
@@ -96,6 +110,11 @@ sparse-array: mmagic.o sparse-array.c
 tcp-echo-server: mmagic.o tcp-echo-server.c
 	$(CC_CMD) $(LDADD) tcp-echo-server.c mmagic.o -o tcp-echo-server || \
 		$(CC_CMD) $(LDADD_NETBSD) tcp-echo-server.c mmagic.o -o tcp-echo-server
+normalpath: normalpath.h normalpath.c
+	$(CC_CMD) $(LDADD) normalpath.c -o normalpath
+test-normalpath: normalpath.h test-normalpath.c mmagic.h mmagic.o
+	$(CC_CMD) $(LDADD) test-normalpath.c mmagic.o -o test-normalpath || \
+		$(CC_CMD) $(LDADD_NETBSD) test-normalpath.c mmagic.o -o test-normalpath
 
 a: mmap-buffer-test
 	./mmap-buffer-test > a.tmp
